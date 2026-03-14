@@ -174,7 +174,7 @@ drupal_entity_update(entity_type="node", id=12345, fields={"title": "New Title",
 
 ### Working with Groups (Group module v3)
 
-Groups use `group` and `group_relationship` entities. Content is linked to groups through relationship entities, not directly.
+Groups use `group` and `group_relationship` entities. Content is linked to groups through relationship entities, not directly. When in doubt about which group to use, **ask the user** for the group name rather than guessing.
 
 **List groups:**
 ```
