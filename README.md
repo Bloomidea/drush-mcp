@@ -88,6 +88,44 @@ defaults:
   timeout: 30
 ```
 
+### Drush Site Aliases
+
+If your project already uses [Drush site aliases](https://www.drush.org/13.x/site-aliases/) (`drush/sites/self.site.yml`), the fields map directly to `drush-mcp.yml`:
+
+| Drush alias field | drush-mcp equivalent |
+|-------------------|---------------------|
+| `host` | `host` |
+| `user` | `user` |
+| `root` | `root` |
+| `uri` | `uri` |
+| `docker.service` | `container` |
+
+So a Drush alias like:
+
+```yaml
+# drush/sites/self.site.yml
+live:
+  host: example.com
+  user: deploy
+  root: /var/www/html
+  uri: https://example.com
+```
+
+Becomes:
+
+```yaml
+# drush-mcp.yml
+sites:
+  live:
+    transport: ssh
+    host: example.com
+    user: deploy
+    root: /var/www/html
+    uri: https://example.com
+```
+
+The main difference is that drush-mcp requires an explicit `transport` field and supports additional options like `containerFilter` for dynamic Docker container lookup.
+
 ### Environment Variables
 
 | Variable | Description |

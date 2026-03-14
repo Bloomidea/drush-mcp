@@ -25,6 +25,7 @@ MCP server for Drupal via Drush. Connects to any Drupal 10+/11+ site over local 
 - **Use the `user` parameter:** Bridge tools (`drupal_entity_create`, `drupal_entity_read`, `drupal_entity_update`, `drupal_entity_list`, `drupal_introspect`) run as anonymous by default on the Drush side. Pass `user` (a Drupal user ID) to run with that user's permissions. Default is uid 1 (admin). Use a specific user when access checks matter (e.g., creating comments, referencing access-controlled entities).
 - **Confirm before destructive operations:** `drupal_entity_delete`, `drupal_config_set`, `drupal_php_eval`, and `drupal_sql_query` modify data. Always confirm with the user before executing.
 - **Multi-site:** When multiple Drupal sites are configured, every tool accepts a `site` parameter. With a single site, it resolves automatically.
+- **Drush site aliases:** If the project has a `drush/sites/self.site.yml` file, its entries (`host`, `user`, `root`, `uri`) map directly to `drush-mcp.yml` site config. Useful for discovering connection details when setting up new sites.
 
 ## Tools
 
@@ -269,6 +270,138 @@ Use `format="json"` to get structured output from built-in Drush commands. Commo
 drupal_php_eval(code="echo \\Drupal::VERSION;")
 drupal_sql_query(query="SELECT COUNT(*) FROM node_field_data WHERE status = 1")
 ```
+
+## Drush Commands Reference
+
+Commands available via `drupal_drush(command="...", arguments=[...], format="json")`. This covers commands beyond the dedicated MCP tools.
+
+### Cron & Maintenance
+
+| Command | Description |
+|---------|-------------|
+| `core:cron` | Execute cron hooks |
+| `core:requirements` | Check system requirements (PHP, DB, filesystem) |
+| `maint:get` | Get maintenance mode status |
+| `maint:set 1` / `maint:set 0` | Enable/disable maintenance mode |
+
+### Modules & Themes
+
+| Command | Description |
+|---------|-------------|
+| `pm:list` | List installed modules and their status |
+| `pm:install MODULE` | Install and enable a module |
+| `pm:uninstall MODULE` | Uninstall a module |
+| `pm:security` | Check for security updates |
+| `theme:install THEME` | Install a theme |
+| `theme:uninstall THEME` | Uninstall a theme |
+
+### Config Management
+
+| Command | Description |
+|---------|-------------|
+| `config:status` | Show config sync status (differences between active and staged) |
+| `config:export` | Export active config to sync directory |
+| `config:import` | Import staged config into active storage |
+| `config:delete NAME` | Delete a config object |
+
+### State API
+
+| Command | Description |
+|---------|-------------|
+| `state:get KEY` | Get a state value (e.g., `system.cron_last`) |
+| `state:set KEY VALUE` | Set a state value |
+| `state:delete KEY` | Delete a state value |
+
+State is for environment-specific values (last cron run, maintenance mode). Config is for site configuration that syncs between environments.
+
+### Database
+
+| Command | Description |
+|---------|-------------|
+| `sql:dump` | Export full database as SQL |
+| `sql:sanitize` | Sanitize DB for development (removes emails, resets passwords) |
+| `updatedb` | Run pending database updates |
+| `updatedb:status` | Show pending update hooks |
+
+### Users (beyond create/block)
+
+| Command | Description |
+|---------|-------------|
+| `user:information NAME` | Show user details by username |
+| `user:login` | Generate a one-time login link (uid 1 by default) |
+| `user:login --uid=UID` | Generate login link for specific user |
+| `user:password NAME PASSWORD` | Set a user's password |
+| `user:unblock NAME` | Unblock a user account |
+
+Note: `user:login` generates URLs based on the site's `uri` setting. If links show `http://default`, the site needs a `uri` configured in `drush-mcp.yml`.
+
+### Roles & Permissions
+
+| Command | Description |
+|---------|-------------|
+| `role:list` | List all roles |
+| `role:create MACHINE_NAME --name="Label"` | Create a role |
+| `role:delete MACHINE_NAME` | Delete a role |
+| `role:perm:add ROLE PERMISSION` | Grant a permission to a role |
+| `role:perm:remove ROLE PERMISSION` | Revoke a permission from a role |
+
+### Queues
+
+| Command | Description |
+|---------|-------------|
+| `queue:list` | List all queues with item counts |
+| `queue:run QUEUE_NAME` | Process items in a queue |
+| `queue:delete QUEUE_NAME` | Delete all items from a queue |
+
+### Migrations
+
+| Command | Description |
+|---------|-------------|
+| `migrate:status` | Show status of all migrations |
+| `migrate:import MIGRATION_ID` | Run a migration |
+| `migrate:rollback MIGRATION_ID` | Rollback a migration |
+| `migrate:reset-status MIGRATION_ID` | Reset a stuck migration |
+| `migrate:messages MIGRATION_ID` | Show migration error messages |
+| `migrate:fields-source MIGRATION_ID` | List source fields for a migration |
+
+### Views
+
+| Command | Description |
+|---------|-------------|
+| `views:list` | List all views |
+| `views:execute VIEW_ID` | Execute a view and return results |
+| `views:enable VIEW_ID` | Enable a view |
+| `views:disable VIEW_ID` | Disable a view |
+
+### Locale & Translations
+
+| Command | Description |
+|---------|-------------|
+| `locale:check` | Check for available translation updates |
+| `locale:update` | Download and import translation updates |
+| `locale:import LANGCODE FILE` | Import a .po translation file |
+| `locale:export LANGCODE` | Export translations to .po format |
+
+### Deploy
+
+| Command | Description |
+|---------|-------------|
+| `deploy` | Run deployment sequence (updatedb, config:import, cache:rebuild) |
+| `deploy:hook-status` | Show status of deploy hooks |
+| `deploy:mark-complete` | Mark deploy hooks as executed |
+
+### Image
+
+| Command | Description |
+|---------|-------------|
+| `image:flush STYLE` | Delete derived images for a style (use `--all` for all styles) |
+| `image:derive STYLE SOURCE` | Generate a derivative image |
+
+### Routing
+
+| Command | Description |
+|---------|-------------|
+| `core:route` | List all routes (use `--name=FILTER` or `--path=FILTER`) |
 
 ## Introspect Modes
 

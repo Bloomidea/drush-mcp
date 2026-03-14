@@ -9,6 +9,7 @@ sites:
     command: ddev drush
     # command: lando drush
     # command: drush
+    # uri: https://mysite.ddev.site
 
   # Production via SSH
   # production:
@@ -27,6 +28,7 @@ sites:
   #   user: deploy
   #   container: drupal-web
   #   drush: vendor/bin/drush
+  #   uri: https://staging.example.com
   #   timeout: 30
 
   # Docker with dynamic container lookup (Coolify, Swarm, etc.)
@@ -36,6 +38,7 @@ sites:
   #   user: root
   #   containerFilter: "label=coolify.serviceName=myapp-web"
   #   drush: vendor/bin/drush
+  #   uri: https://example.com
   #   timeout: 60
 
 defaults:
