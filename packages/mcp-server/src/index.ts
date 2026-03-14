@@ -44,6 +44,7 @@ Options:
   --user <user>           SSH/Docker user
   --root <path>           Drupal root path on remote
   --container <name>      Docker container name
+  --container-filter <f>  Docker filter for dynamic container lookup
   --config <path>         Path to config file
   --version, -v           Show version
   --help, -h              Show this help
@@ -54,7 +55,8 @@ Environment variables:
   DRUSH_MCP_USER          SSH/Docker user
   DRUSH_MCP_ROOT          Drupal root path
   DRUSH_MCP_COMMAND       Local command
-  DRUSH_MCP_CONTAINER     Docker container name
+  DRUSH_MCP_CONTAINER         Docker container name
+  DRUSH_MCP_CONTAINER_FILTER  Docker filter expression
 
 Config file:
   drush-mcp.yml in cwd or home dir, or --config <path>

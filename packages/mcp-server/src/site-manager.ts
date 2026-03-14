@@ -57,10 +57,10 @@ export class SiteManager {
         transport = new SshTransport({ host: site.host, user: site.user, root: site.root, drush, timeout, uri: site.uri });
         break;
       case 'docker':
-        if (!site.host || !site.user || !site.container) {
-          throw new Error(`Site '${siteName}' (docker) requires host, user, and container.`);
+        if (!site.host || !site.user || (!site.container && !site.containerFilter)) {
+          throw new Error(`Site '${siteName}' (docker) requires host, user, and either container or containerFilter.`);
         }
-        transport = new DockerTransport({ host: site.host, user: site.user, container: site.container, drush, timeout, uri: site.uri });
+        transport = new DockerTransport({ host: site.host, user: site.user, container: site.container, containerFilter: site.containerFilter, drush, timeout, uri: site.uri });
         break;
       default:
         throw new Error(`Unknown transport type '${(site as SiteConfig).transport}' for site '${siteName}'.`);

@@ -5,7 +5,7 @@ import type { DrushMcpConfig, SiteConfig } from './types.js';
 
 export function resolveTransportType(flags: Record<string, unknown>): SiteConfig['transport'] {
   if (flags.local) return 'local';
-  if (flags.container) return 'docker';
+  if (flags.container || flags['container-filter'] || flags.containerFilter) return 'docker';
   if (flags.host) return 'ssh';
   return 'local';
 }
@@ -34,7 +34,8 @@ export function parseCliArgs(args: string[]): DrushMcpConfig {
     host: flags.host as string,
     user: flags.user as string,
     root: flags.root as string,
-    container: flags.container as string,
+    container:       flags.container as string,
+    containerFilter: flags['container-filter'] as string,
     command: (flags.command as string) ?? (transport === 'local' ? 'drush' : undefined),
     drush: flags.drush as string,
     uri: flags.uri as string,
@@ -68,8 +69,9 @@ export function loadConfigFromEnv(): Partial<SiteConfig> {
     host: process.env.DRUSH_MCP_HOST,
     user: process.env.DRUSH_MCP_USER,
     transport: process.env.DRUSH_MCP_TRANSPORT as SiteConfig['transport'],
-    container: process.env.DRUSH_MCP_CONTAINER,
-    drush: process.env.DRUSH_MCP_DRUSH,
+    container:       process.env.DRUSH_MCP_CONTAINER,
+    containerFilter: process.env.DRUSH_MCP_CONTAINER_FILTER,
+    drush:           process.env.DRUSH_MCP_DRUSH,
   };
 }
 

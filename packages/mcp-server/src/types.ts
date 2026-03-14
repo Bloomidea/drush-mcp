@@ -11,6 +11,7 @@ export interface SiteConfig {
   user?: string;
   root?: string;
   container?: string;
+  containerFilter?: string;  // Docker filter for dynamic container resolution
   command?: string;
   drush?: string;
   uri?: string;

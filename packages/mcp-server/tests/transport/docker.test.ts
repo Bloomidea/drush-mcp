@@ -29,4 +29,11 @@ describe('DockerTransport', () => {
     expect(parts.args[1]).toContain('/app/vendor/bin/drush core:status');
     expect(parts.args[1]).toContain('--format\\=json');
   });
+
+  it('can be constructed with containerFilter instead of container', () => {
+    const transport = new DockerTransport({
+      host: 'x.com', user: 'root', containerFilter: 'label=app=drupal', timeout: 30,
+    });
+    expect(transport).toBeDefined();
+  });
 });

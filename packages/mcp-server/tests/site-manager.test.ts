@@ -54,4 +54,13 @@ describe('SiteManager', () => {
     expect(manager.getTransport('remote')).toBeDefined();
     expect(manager.getTransport('docker')).toBeDefined();
   });
+
+  it('creates docker transport with containerFilter', () => {
+    const manager = new SiteManager({
+      sites: {
+        prod: { name: 'prod', transport: 'docker', host: 'x.com', user: 'root', containerFilter: 'label=coolify.serviceName=web', timeout: 30 },
+      },
+    });
+    expect(manager.getTransport('prod')).toBeDefined();
+  });
 });
