@@ -20,7 +20,7 @@ sites:
   #   uri: https://example.com
   #   timeout: 60
 
-  # Staging via Docker over SSH
+  # Docker with static container name
   # staging:
   #   transport: docker
   #   host: staging.example.com
@@ -28,6 +28,15 @@ sites:
   #   container: drupal-web
   #   drush: vendor/bin/drush
   #   timeout: 30
+
+  # Docker with dynamic container lookup (Coolify, Swarm, etc.)
+  # production:
+  #   transport: docker
+  #   host: example.com
+  #   user: root
+  #   containerFilter: "label=coolify.serviceName=myapp-web"
+  #   drush: vendor/bin/drush
+  #   timeout: 60
 
 defaults:
   timeout: 30

@@ -52,8 +52,11 @@ drush-mcp --local --command "ddev drush"
 # SSH
 drush-mcp --ssh --host example.com --user deploy --root /var/www/html
 
-# Docker
+# Docker (static container name)
 drush-mcp --docker --host example.com --user deploy --container mycontainer
+
+# Docker (dynamic container lookup via filter)
+drush-mcp --docker --host example.com --user deploy --container-filter "label=coolify.serviceName=myapp"
 ```
 
 ### Config File
@@ -85,6 +88,49 @@ defaults:
 | `DRUSH_MCP_ROOT` | Drupal root path |
 | `DRUSH_MCP_COMMAND` | Local command (e.g. `ddev drush`) |
 | `DRUSH_MCP_CONTAINER` | Docker container name |
+| `DRUSH_MCP_CONTAINER_FILTER` | Docker filter for dynamic container lookup |
+
+## Dynamic Container Resolution
+
+When using Docker-based hosting platforms (Coolify, Docker Swarm, etc.), container names change on every deploy. Use `--container-filter` or the `containerFilter` config option with any valid `docker ps --filter` expression:
+
+```bash
+# Coolify: match by service name label
+drush-mcp --docker --host example.com --user root --container-filter "label=coolify.serviceName=myapp-web"
+
+# Docker Compose: match by compose service
+drush-mcp --docker --host example.com --user root --container-filter "label=com.docker.compose.service=web"
+
+# Match by image name
+drush-mcp --docker --host example.com --user root --container-filter "ancestor=myimage:latest"
+```
+
+Or in `drush-mcp.yml`:
+
+```yaml
+sites:
+  production:
+    transport: docker
+    host: example.com
+    user: root
+    containerFilter: "label=coolify.serviceName=myapp-web"
+```
+
+The container name is resolved fresh on every command via `docker ps --filter`, so it automatically picks up new containers after deploys.
+
+### Coolify Setup
+
+If your Drupal site runs on [Coolify](https://coolify.io/):
+
+1. Set a service name in Coolify: **Configuration > General > Name** (e.g., `atrium-web`)
+2. Use the label filter:
+   ```bash
+   claude mcp add drupal-production -- drush-mcp \
+     --docker --host your-server.com --user root \
+     --container-filter "label=coolify.serviceName=atrium-web"
+   ```
+3. Install the bridge on your Drupal site: `composer require bloomidea/drush-mcp-bridge`
+4. Deploy - the bridge commands are available immediately
 
 ## Tools
 
