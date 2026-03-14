@@ -39,6 +39,16 @@ Or with SSH:
 claude mcp add drupal -- drush-mcp --ssh --host example.com --user deploy --root /var/www/html
 ```
 
+**Using an AI agent?** Add the [skill](skills/drupal/SKILL.md) to teach your agent how to use the tools effectively:
+
+```bash
+npx skills add Bloomidea/drush-mcp
+```
+
+> *"create a task in the Atrium group"* / *"list all published articles"* / *"check Drupal status"* / *"add a comment to node 123"*
+>
+> Works with [Claude Code, Cursor, Codex, Gemini, Windsurf, and 37+ agents](https://add-skill.org/).
+
 ## Configuration
 
 Three methods: CLI flags, YAML config file, or environment variables.
