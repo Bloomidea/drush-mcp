@@ -63,7 +63,7 @@ These use the drush-bridge package (`bloomidea/drush-mcp-bridge`) installed on t
 
 | Tool | Description |
 |------|-------------|
-| `drupal_drush` | Run any Drush command (e.g., `pm:security`, `queue:list`) |
+| `drupal_drush` | Run any Drush command (e.g., `pm:security`, `queue:list`). Accepts optional `format` param (json, table, yaml) |
 | `drupal_php_eval` | Execute arbitrary PHP on the Drupal site |
 | `drupal_sql_query` | Run SQL query against the database |
 
@@ -251,7 +251,10 @@ drupal_config_set(name="system.site", key="name", value="My Site")
 drupal_drush(command="pm:security")
 drupal_drush(command="queue:list")
 drupal_drush(command="state:get", arguments=["system.cron_last"])
+drupal_drush(command="core:status", format="json")
 ```
+
+Use `format="json"` to get structured output from built-in Drush commands. Common formats: `json`, `table`, `yaml`.
 
 ### Execute PHP or SQL
 
