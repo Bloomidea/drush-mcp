@@ -3,7 +3,7 @@
 MCP server for Drupal via Drush. Lets AI agents (Claude Code, Gemini CLI, etc.) interact with any Drupal 10+/11+ site - locally, over SSH, or via Docker - by executing Drush commands.
 
 Two packages:
-- **`drush-mcp`** (npm) - TypeScript MCP server
+- **`@bloomidea/drush-mcp`** (npm) - TypeScript MCP server
 - **`bloomidea/drush-mcp-bridge`** (Composer) - PHP Drush bridge for structured entity operations
 
 ## Requirements
