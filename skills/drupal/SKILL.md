@@ -30,7 +30,7 @@ MCP server for Drupal via Drush. Connects to any Drupal 10+/11+ site over local 
 
 ### Entity Operations (bridge commands)
 
-These use the drush-bridge package (`drush-mcp/drush-bridge`) installed on the Drupal site.
+These use the drush-bridge package (`bloomidea/drush-mcp-bridge`) installed on the Drupal site.
 
 | Tool | Description |
 |------|-------------|

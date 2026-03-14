@@ -1,5 +1,5 @@
 {
-  "name": "drush-mcp/drush-bridge",
+  "name": "bloomidea/drush-mcp-bridge",
   "description": "Drush commands for AI agent entity operations and schema introspection",
   "type": "drupal-drush",
   "license": "MIT",
@@ -7,23 +7,15 @@
     "php": ">=8.1",
     "drush/drush": "^12 || ^13"
   },
-  "require-dev": {
-    "phpunit/phpunit": "^10"
-  },
   "autoload": {
     "psr-4": {
-      "DrushMcp\\": "src/"
-    }
-  },
-  "autoload-dev": {
-    "psr-4": {
-      "DrushMcp\\Tests\\": "tests/"
+      "DrushMcp\\": "packages/drush-mcp-bridge/src/"
     }
   },
   "extra": {
     "drush": {
       "services": {
-        "drush.services.yml": "^12 || ^13"
+        "packages/drush-mcp-bridge/drush.services.yml": "^12 || ^13"
       }
     }
   }

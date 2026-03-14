@@ -4,7 +4,7 @@ MCP server for Drupal via Drush. Lets AI agents (Claude Code, Gemini CLI, etc.) 
 
 Two packages:
 - **`drush-mcp`** (npm) - TypeScript MCP server
-- **`drush-mcp/drush-bridge`** (Composer) - PHP Drush bridge for structured entity operations
+- **`bloomidea/drush-mcp-bridge`** (Composer) - PHP Drush bridge for structured entity operations
 
 ## Requirements
 
@@ -24,7 +24,7 @@ npm install -g drush-mcp
 Install the Drush bridge on your Drupal site:
 
 ```bash
-composer require drush-mcp/drush-bridge
+composer require bloomidea/drush-mcp-bridge
 ```
 
 Register in Claude Code (local):
@@ -116,7 +116,7 @@ When multiple sites are configured, all tools accept a `site` parameter to targe
 
 ## Drush Bridge Commands
 
-The `drush-mcp/drush-bridge` Composer package provides structured entity commands auto-discovered by Drush:
+The `bloomidea/drush-mcp-bridge` Composer package provides structured entity commands auto-discovered by Drush:
 
 | Command | Description |
 |---------|-------------|

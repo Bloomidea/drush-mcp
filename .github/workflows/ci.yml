@@ -33,4 +33,4 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-      - run: find packages/drush-bridge/src -name '*.php' -exec php -l {} \;
+      - run: find packages/drush-mcp-bridge/src -name '*.php' -exec php -l {} \;
