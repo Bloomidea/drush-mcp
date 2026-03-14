@@ -77,6 +77,12 @@ Config file:
 
   function createHandler(builderFn: (input: Record<string, unknown>) => DrushArgs) {
     return async ({ site, ...input }: Record<string, unknown>) => {
+      // Coerce JSON strings to objects (MCP clients may serialize records as strings)
+      for (const key of ['fields', 'filters']) {
+        if (typeof input[key] === 'string') {
+          try { input[key] = JSON.parse(input[key] as string); } catch { /* leave as-is */ }
+        }
+      }
       const siteConfig  = siteManager.resolve(site as string | undefined);
       const transport   = siteManager.getTransport(siteConfig.name);
       const { command, args, jsonFormat } = builderFn(input);
@@ -103,7 +109,7 @@ Config file:
     {
       entity_type: z.string().describe('Entity type (e.g. node, comment)'),
       bundle:      z.string().describe('Bundle (e.g. article, page)'),
-      fields:      z.record(z.string(), z.unknown()).describe('Field values as key-value pairs'),
+      fields:      z.any().describe('Field values as key-value pairs'),
       user:        z.coerce.number().optional().describe('Drupal user ID to run as (default: admin)'),
       site:        siteParam,
     },
@@ -128,7 +134,7 @@ Config file:
     {
       entity_type: z.string().describe('Entity type (e.g. node, user)'),
       id:          z.coerce.number().describe('Entity ID'),
-      fields:      z.record(z.string(), z.unknown()).describe('Field values to update as key-value pairs'),
+      fields:      z.any().describe('Field values to update as key-value pairs'),
       user:        z.coerce.number().optional().describe('Drupal user ID to run as (default: admin)'),
       site:        siteParam,
     },
@@ -141,7 +147,7 @@ Config file:
     {
       entity_type: z.string().describe('Entity type (e.g. node, user)'),
       bundle:      z.string().optional().describe('Bundle to filter by'),
-      filters:     z.record(z.string(), z.unknown()).optional().describe('Field filters as key-value pairs'),
+      filters:     z.any().optional().describe('Field filters as key-value pairs'),
       limit:       z.coerce.number().optional().describe('Maximum number of results'),
       offset:      z.coerce.number().optional().describe('Number of results to skip'),
       sort:        z.string().optional().describe('Sort field'),
