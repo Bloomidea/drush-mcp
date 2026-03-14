@@ -32,5 +32,10 @@
     "README.md",
     "LICENSE"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Bloomidea/drush-mcp",
+    "directory": "packages/mcp-server"
+  },
   "license": "MIT"
 }
