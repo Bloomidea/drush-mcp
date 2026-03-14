@@ -219,9 +219,16 @@ drupal_entity_create(
 )
 ```
 
+**Discover available relationship types for a group type:**
+```
+drupal_introspect(entity_type="group_relationship")
+```
+This lists all relationship bundles (e.g., `bloom-group_membership`, `bloom-group_node-ol_todo`, `client-group_node-ol_todo`). Use this to find the correct bundle before adding content to a group.
+
 **Key details:**
 - Relationship bundle format: `{group_type}-{plugin_id_with_hyphens}` (e.g., `bloom-group_node-ol_todo`)
 - The `plugin_id` field value uses colons: `group_node:ol_todo`, `group_membership`
+- To find the right bundle: the bundle name replaces colons with hyphens and prepends the group type. So for group type `bloom` and content plugin `group_node:ol_todo`, the bundle is `bloom-group_node-ol_todo`
 - To list content in a group, query `group_relationship` filtered by `gid`:
   ```
   drupal_entity_list(entity_type="group_relationship", bundle="bloom-group_node-ol_todo", filters={"gid": GROUP_ID})
