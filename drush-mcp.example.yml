@@ -1,0 +1,34 @@
+# drush-mcp configuration
+# Copy to drush-mcp.yml in your project root or home directory.
+# Or pass --config <path> to use a custom location.
+
+sites:
+  # Local development (DDEV, Lando, or plain Drush)
+  local:
+    transport: local
+    command: ddev drush
+    # command: lando drush
+    # command: drush
+
+  # Production via SSH
+  # production:
+  #   transport: ssh
+  #   host: example.com
+  #   user: deploy
+  #   root: /var/www/html
+  #   drush: vendor/bin/drush
+  #   uri: https://example.com
+  #   timeout: 60
+
+  # Staging via Docker over SSH
+  # staging:
+  #   transport: docker
+  #   host: staging.example.com
+  #   user: deploy
+  #   container: drupal-web
+  #   drush: vendor/bin/drush
+  #   timeout: 30
+
+defaults:
+  timeout: 30
+  # drush: vendor/bin/drush

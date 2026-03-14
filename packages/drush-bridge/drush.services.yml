@@ -1,0 +1,6 @@
+services:
+  drush_mcp.commands:
+    class: DrushMcp\Drush\Commands\McpBridgeDrushCommands
+    autowire: true
+    tags:
+      - { name: drush.command }
