@@ -1,5 +1,5 @@
 {
-  "name": "drush-mcp",
+  "name": "@bloomidea/drush-mcp",
   "version": "0.1.0",
   "description": "MCP server for Drupal via Drush",
   "type": "module",
