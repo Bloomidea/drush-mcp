@@ -18,7 +18,7 @@ Two packages:
 Install the MCP server:
 
 ```bash
-npm install -g drush-mcp
+npm install -g @bloomidea/drush-mcp
 ```
 
 Install the Drush bridge on your Drupal site:
@@ -26,6 +26,16 @@ Install the Drush bridge on your Drupal site:
 ```bash
 composer require bloomidea/drush-mcp-bridge
 ```
+
+Add the [agent skill](skills/drupal/SKILL.md) so your agent knows how to work with Drupal entities, fields, and groups:
+
+```bash
+npx skills add Bloomidea/drush-mcp
+```
+
+> *"create a task in the Atrium group"* / *"list all published articles"* / *"check Drupal status"* / *"add a comment to node 123"*
+>
+> Works with [Claude Code, Cursor, Codex, Gemini, Windsurf, and 37+ agents](https://add-skill.org/).
 
 Register in Claude Code (local):
 
@@ -38,16 +48,6 @@ Or with SSH:
 ```bash
 claude mcp add drupal -- drush-mcp --ssh --host example.com --user deploy --root /var/www/html
 ```
-
-**Using an AI agent?** Add the [skill](skills/drupal/SKILL.md) to teach your agent how to use the tools effectively:
-
-```bash
-npx skills add Bloomidea/drush-mcp
-```
-
-> *"create a task in the Atrium group"* / *"list all published articles"* / *"check Drupal status"* / *"add a comment to node 123"*
->
-> Works with [Claude Code, Cursor, Codex, Gemini, Windsurf, and 37+ agents](https://add-skill.org/).
 
 ## Configuration
 
