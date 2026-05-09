@@ -44,7 +44,50 @@ Power tools (`drupal_drush`, `drupal_php_eval`, `drupal_sql_query`) skip the bri
 
 ## Versioning
 
-The npm package and the Composer package release together. When bumping a feature, bump both `packages/mcp-server/package.json` and `packages/drush-mcp-bridge/composer.json` (if version is set there) in the same change. The skill at `skills/drupal/SKILL.md` is the third leg — update it whenever a tool's contract changes.
+The npm package and the Composer package release together via a **single git tag**. The bridge's `composer.json` has no `version` field — its version comes from the tag. Only `packages/mcp-server/package.json` carries an explicit version number.
+
+The skill at `skills/drupal/SKILL.md` is the third leg — update it whenever a tool's contract changes, and bump its own frontmatter `version:`.
+
+## Publishing a new release
+
+**Always check what's already taken before picking a version** — doc-only patch releases happen and collisions are easy:
+
+```bash
+npm view @bloomidea/drush-mcp versions --json
+gh release list --repo Bloomidea/drush-mcp
+```
+
+SemVer policy (we're in `0.x`):
+- **Patch** (`0.x.y → 0.x.y+1`): bug fixes, doc updates, no behaviour change.
+- **Minor** (`0.x.y → 0.(x+1).0`): new tools, new config blocks, additive features.
+- Composer's `^0.x` is **patch-only** (`^0.3` means `>=0.3.0 <0.4.0`, NOT `<1.0.0`). Consumers must bump their constraint on every minor — `"^0.1 || ^0.3"` is the standard cross-minor pattern, not `"^0.1"`.
+
+Release steps in order:
+
+1. Bump `packages/mcp-server/package.json` to the new version.
+2. If a tool contract changed: update `skills/drupal/SKILL.md` (table + frontmatter `version:`), `README.md` tool/bridge tables, `drush-mcp.example.yml` if config schema grew.
+3. Commit (`feat:` for new tools, `fix:` for bug fixes, `chore:` for version-only bumps). One commit per logical change is preferred over a single mega-commit.
+4. Annotated tag: `git tag -a v0.x.y -m "v0.x.y — short description"`.
+5. Push: `git push origin main && git push origin v0.x.y`.
+6. Create the GitHub Release (project convention is one Release per tag, formatted like `v0.2.1`):
+   ```bash
+   gh release create v0.x.y --title "v0.x.y" --notes "$(cat <<'EOF'
+   # drush-mcp v0.x.y
+   ## Features / Fixes / Skill / ...
+   - bullet points
+   ## Install
+   \`\`\`bash
+   npm install -g @bloomidea/drush-mcp@0.x.y
+   \`\`\`
+   EOF
+   )"
+   ```
+7. `cd packages/mcp-server && npm publish` — pushes to the npm registry.
+8. Refresh Packagist if `composer update` doesn't see the new version: log in to https://packagist.org/packages/bloomidea/drush-mcp-bridge and click "Update". The GitHub→Packagist webhook can lag; manual refresh resolves within ~30s.
+
+After publishing, consumers (atrium and others) need their `bloomidea/drush-mcp-bridge` composer constraint bumped, then `composer update bloomidea/drush-mcp-bridge --with-dependencies`, then a deploy. Tell agents to restart their Claude Code session so the MCP server respawns with the new npm binary.
+
+If `composer update` fails on a consumer with a `composer-plugin-api` constraint conflict (we hit this with `simplesamlphp/composer-module-installer ~2.9.0`), `composer self-update` to the latest is usually the fix — the plugin API version is decoupled from the composer binary version.
 
 ## Build, test, lint
 
