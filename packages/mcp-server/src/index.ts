@@ -8,12 +8,14 @@ import { parseCliArgs, loadConfigFile, loadConfigFromEnv, mergeConfig } from './
 import { normalizeError } from './errors.js';
 import { SiteManager } from './site-manager.js';
 import type { DrushArgs } from './types.js';
+import { resolveFileUploadConfig } from './types.js';
 
 import { buildEntityCreateArgs, buildEntityReadArgs, buildEntityUpdateArgs, buildEntityListArgs, buildEntityDeleteArgs } from './tools/entity.js';
 import { buildCacheRebuildArgs, buildWatchdogArgs, buildStatusArgs, buildConfigGetArgs, buildConfigSetArgs, buildFieldInfoArgs } from './tools/system.js';
 import { buildUserCreateArgs, buildUserBlockArgs } from './tools/user.js';
 import { buildDrushArgs, buildPhpEvalArgs, buildSqlQueryArgs } from './tools/power.js';
 import { buildIntrospectArgs } from './tools/introspect.js';
+import { buildFileUploadArgs, buildFileAttachArgs, FilePreflightError, type FileUploadInput, type FileAttachInput, type FileDrushArgs } from './tools/file.js';
 
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
@@ -92,6 +94,37 @@ Config file:
       if (result.exitCode !== 0) {
         const error = normalizeError('drush', result.stderr || result.stdout, {
           exitCode: result.exitCode, command, site: siteConfig.name,
+        });
+        return { content: [{ type: 'text' as const, text: JSON.stringify(error, null, 2) }], isError: true };
+      }
+
+      return { content: [{ type: 'text' as const, text: result.stdout || 'OK' }] };
+    };
+  }
+
+  function createFileHandler<T>(builderFn: (input: T, fileConfig: ReturnType<typeof resolveFileUploadConfig>) => FileDrushArgs) {
+    return async ({ site, ...input }: Record<string, unknown>) => {
+      const siteConfig = siteManager.resolve(site as string | undefined);
+      const fileConfig = resolveFileUploadConfig(siteManager.getSite(siteConfig.name));
+
+      let built: FileDrushArgs;
+      try {
+        built = builderFn(input as T, fileConfig);
+      }
+      catch (err) {
+        if (err instanceof FilePreflightError) {
+          const error = { error: err.code, message: err.message, site: siteConfig.name };
+          return { content: [{ type: 'text' as const, text: JSON.stringify(error, null, 2) }], isError: true };
+        }
+        throw err;
+      }
+
+      const transport = siteManager.getTransport(siteConfig.name);
+      const result    = await transport.executeWithStdin(built.command, built.args, built.stdin);
+
+      if (result.exitCode !== 0) {
+        const error = normalizeError('drush', result.stderr || result.stdout, {
+          exitCode: result.exitCode, command: built.command, site: siteConfig.name,
         });
         return { content: [{ type: 'text' as const, text: JSON.stringify(error, null, 2) }], isError: true };
       }
@@ -260,6 +293,41 @@ Config file:
       site: siteParam,
     },
     createHandler(buildUserBlockArgs as (input: Record<string, unknown>) => DrushArgs),
+  );
+
+  // File tools
+  server.tool(
+    'drupal_file_upload',
+    'Upload a file to the Drupal site and create a managed file entity. Returns the new fid, uri, and url.',
+    {
+      content_base64: z.string().describe('Base64-encoded file bytes'),
+      filename:       z.string().describe('Display filename including extension'),
+      scheme:         z.enum(['public', 'private', 'temporary']).optional().describe('Stream wrapper scheme (default: public)'),
+      destination:    z.string().optional().describe('Directory within the scheme (default: mcp-uploads/<YYYY-MM> in UTC)'),
+      uid:            z.coerce.number().optional().describe('Owning user ID (default: site-configured default_uid)'),
+      site:           siteParam,
+    },
+    createFileHandler<FileUploadInput>(buildFileUploadArgs),
+  );
+
+  server.tool(
+    'drupal_file_attach',
+    'Upload a file and attach it to a file/image field on an existing entity in one round trip. Image fields support optional alt and title.',
+    {
+      content_base64: z.string().describe('Base64-encoded file bytes'),
+      filename:       z.string().describe('Display filename including extension'),
+      entity_type:    z.string().describe('Target entity type (e.g. node, comment, media)'),
+      entity_id:      z.coerce.number().describe('Target entity ID'),
+      field_name:     z.string().describe('Target field name (must be of type file or image)'),
+      mode:           z.enum(['append', 'replace']).optional().describe('Append to or replace existing field items (default: append)'),
+      alt:            z.string().optional().describe('Alt text (image fields only)'),
+      title:          z.string().optional().describe('Title text (image fields only)'),
+      scheme:         z.enum(['public', 'private', 'temporary']).optional().describe('Stream wrapper scheme (default: public)'),
+      destination:    z.string().optional().describe('Directory within the scheme (default: mcp-uploads/<YYYY-MM> in UTC)'),
+      uid:            z.coerce.number().optional().describe('Owning user ID (default: site-configured default_uid)'),
+      site:           siteParam,
+    },
+    createFileHandler<FileAttachInput>(buildFileAttachArgs),
   );
 
   // Power tools

@@ -36,4 +36,17 @@ describe('DockerTransport', () => {
     });
     expect(transport).toBeDefined();
   });
+
+  it('inserts -T (ssh) and -i (docker exec) when building for stdin streaming', () => {
+    const transport = new DockerTransport({
+      host: '176.9.125.8',
+      user: 'root',
+      container: 'atrium-web',
+      drush: '/app/vendor/bin/drush',
+      timeout: 30,
+    });
+    const parts = transport.buildCommandParts('mcp:file-upload', ['--filename=a.txt'], { stdin: true });
+    expect(parts.args[0]).toBe('-T');
+    expect(parts.args[2]).toContain('docker exec -i atrium-web');
+  });
 });

@@ -1,4 +1,4 @@
-import { BaseTransport, type TransportConfig, type CommandParts } from './base.js';
+import { BaseTransport, type TransportConfig, type CommandParts, type BuildOptions } from './base.js';
 
 export interface LocalTransportConfig extends TransportConfig {
   command: string;
@@ -13,7 +13,7 @@ export class LocalTransport extends BaseTransport {
     this.commandParts = config.command.split(/\s+/);
   }
 
-  buildCommandParts(drushCommand: string, args: string[]): CommandParts {
+  buildCommandParts(drushCommand: string, args: string[], _options?: BuildOptions): CommandParts {
     const [file, ...prefix] = this.commandParts;
     return {
       file,

@@ -1,13 +1,15 @@
 ---
 name: drupal
-version: 1.0.0
+version: 1.1.0
 description: >-
   Drupal site management: create, read, update, delete, and query entities,
-  introspect field schemas, manage configuration, rebuild caches, view logs,
-  and run arbitrary Drush commands. Use when the user asks to "create a node",
-  "add a comment", "list tasks", "check Drupal status", "clear caches",
-  "read config", "query the database", "introspect fields", "drupal",
-  "drush", or any content management task involving a Drupal site.
+  upload and attach files to fields, introspect field schemas, manage
+  configuration, rebuild caches, view logs, and run arbitrary Drush commands.
+  Use when the user asks to "create a node", "add a comment", "list tasks",
+  "upload a file", "attach a PRD to a task", "attach an image to a node",
+  "check Drupal status", "clear caches", "read config", "query the database",
+  "introspect fields", "drupal", "drush", or any content management task
+  involving a Drupal site.
 metadata:
   openclaw:
     category: "cms"
@@ -41,6 +43,8 @@ These use the drush-bridge package (`bloomidea/drush-mcp-bridge`) installed on t
 | `drupal_entity_list` | Query entities with filters, pagination, sorting |
 | `drupal_entity_delete` | Delete entity by type + numeric ID |
 | `drupal_introspect` | Discover entity types, bundles, fields, allowed values |
+| `drupal_file_upload` | Upload bytes and create a managed file entity (returns `fid`, `uri`, `url`) |
+| `drupal_file_attach` | Upload bytes and attach to a `file`/`image` field on an existing entity in one round trip; supports `mode=append/replace`, plus `alt`/`title` for image fields |
 
 ### System Operations (built-in Drush)
 
@@ -172,6 +176,83 @@ drupal_entity_read(entity_type="node", id=12345)
 ```
 drupal_entity_update(entity_type="node", id=12345, fields={"title": "New Title", "field_status": {"target_id": 2}})
 ```
+
+### Attach a file to a node, comment, or other entity
+
+Use `drupal_file_attach` to upload bytes and attach to a `file` or `image` field in one call. The tool registers `file.usage` against the host entity, so cascade-deletes work, and rolls back on save failure to avoid orphan files.
+
+**Decide between `_upload` and `_attach`:**
+- `drupal_file_attach` — you know the target (entity + field) and want it bound in one round trip. Field-level extension and size limits are validated *before* bytes are written.
+- `drupal_file_upload` — you only need a managed file entity (e.g. to reference from a custom workflow). Returns `fid` for later use. The agent is then responsible for either attaching it (which registers usage) or deleting it.
+
+**Required field discovery:**
+
+Most `file`/`image` fields share the same shape. Common Atrium-style fields:
+- `node:ol_todo` → `field_shared_files` (multi, type `file`)
+- `comment:comment_node_ol_todo` → `field_shared_files` (multi, type `file`)
+- `node:article` → `field_image` (single, type `image`)
+
+When unsure, call `drupal_introspect` on the bundle and look for fields with `"type":"file"` or `"type":"image"`.
+
+**Attach a PRD/document to an existing task (node):**
+```
+drupal_file_attach(
+  filename="PRD-feature.md",
+  content_base64="<base64 of file bytes>",
+  entity_type="node",
+  entity_id=403055,
+  field_name="field_shared_files",
+  uid=4
+)
+```
+
+**Attach to a comment (the more common Atrium pattern):**
+
+1. Create the comment first (see "Add a comment to a node" workflow above), capture the returned comment id.
+2. Attach the file to the comment:
+```
+drupal_file_attach(
+  filename="screenshot.png",
+  content_base64="<base64>",
+  entity_type="comment",
+  entity_id=190282,
+  field_name="field_shared_files",
+  uid=4
+)
+```
+
+**Image fields with alt/title:**
+```
+drupal_file_attach(
+  filename="hero.jpg",
+  content_base64="<base64>",
+  entity_type="node", entity_id=12345,
+  field_name="field_image",
+  alt="Sunset over the harbour", title="Hero image",
+  uid=4
+)
+```
+
+**Replace existing files instead of appending:**
+
+Default `mode` is `append` (adds to the existing list, respecting cardinality). Pass `mode="replace"` to overwrite. On a `cardinality=1` field, append into a populated field returns `CARDINALITY_EXCEEDED` — use `replace` instead.
+
+**Defaults that matter:**
+- `scheme` defaults to `public`. Use `private` for sensitive uploads (requires Drupal's private filesystem to be configured).
+- `destination` defaults to `mcp-uploads/<UTC YYYY-MM>/` so AI uploads stay separate from editorial ones.
+- `uid` defaults to the site's `default_uid` (anonymous unless configured). For Atrium and similar group-aware sites, pass an explicit `uid` because anonymous users typically can't post comments or save entities with restricted text formats.
+
+**Errors to expect:**
+
+| Code | Cause |
+|---|---|
+| `EXTENSION_FORBIDDEN` | Extension not in the configured allowlist or the field's `file_extensions` setting |
+| `SIZE_EXCEEDED` | Larger than `max_size`, the field's `max_filesize`, or PHP `upload_max_filesize`/`post_max_size` |
+| `INVALID_SCHEME` / `INVALID_DESTINATION` | Bad scheme or path traversal attempt |
+| `ENTITY_NOT_FOUND` / `FIELD_INVALID` | Target entity doesn't exist or field isn't a `file`/`image` type |
+| `CARDINALITY_EXCEEDED` | `mode=append` against a full single-cardinality field — use `mode=replace` |
+
+**URL in response:** `url` is `null` for `private`/`temporary` schemes, and also `null` when the site has no `uri` configured in `drush-mcp.yml` (because drush running in CLI without `--uri` can't build a real public URL). The `uri` field (e.g. `public://mcp-uploads/2026-05/foo.md`) is always populated and is what you should pass back to other Drupal calls.
 
 ### Working with Groups (Group module v3)
 

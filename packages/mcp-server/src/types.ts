@@ -4,6 +4,13 @@ export interface TransportResult {
   exitCode: number;
 }
 
+export interface FileUploadConfig {
+  max_size?: number;
+  allowed_extensions?: string[];
+  default_uid?: number;
+  destination_prefix?: string;
+}
+
 export interface SiteConfig {
   name: string;
   transport: 'local' | 'ssh' | 'docker';
@@ -16,6 +23,18 @@ export interface SiteConfig {
   drush?: string;
   uri?: string;
   timeout?: number;
+  file_upload?: FileUploadConfig;
+}
+
+export const FILE_UPLOAD_DEFAULTS: Required<FileUploadConfig> = {
+  max_size:           10 * 1024 * 1024,
+  allowed_extensions: ['txt', 'md', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'svg', 'log', 'sql', 'json', 'yaml', 'yml', 'zip', 'tar', 'gz'],
+  default_uid:        0,
+  destination_prefix: 'mcp-uploads',
+};
+
+export function resolveFileUploadConfig(site: SiteConfig): Required<FileUploadConfig> {
+  return { ...FILE_UPLOAD_DEFAULTS, ...(site.file_upload ?? {}) };
 }
 
 export interface DrushMcpConfig {

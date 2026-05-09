@@ -41,6 +41,19 @@ sites:
   #   uri: https://example.com
   #   timeout: 60
 
+  # File upload tool settings (per-site, all optional)
+  # production:
+  #   transport: ssh
+  #   host: example.com
+  #   user: deploy
+  #   root: /var/www/html
+  #   uri: https://example.com   # required so drupal_file_upload returns a real URL
+  #   file_upload:
+  #     max_size: 10485760                # 10 MB; capped by upload_max_filesize / post_max_size
+  #     allowed_extensions: [txt, md, pdf, png, jpg, sql, log, yml, json]
+  #     default_uid: 0                    # 0 = anonymous (recommended); set a user ID for attribution
+  #     destination_prefix: mcp-uploads   # default; files land in <scheme>://<prefix>/<UTC YYYY-MM>/
+
 defaults:
   timeout: 30
   # drush: vendor/bin/drush

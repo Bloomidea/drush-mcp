@@ -27,4 +27,16 @@ describe('SshTransport', () => {
     const parts = transport.buildCommandParts('core:status', []);
     expect(parts.args[1]).toContain('vendor/bin/drush core:status');
   });
+
+  it('inserts -T when building for stdin streaming', () => {
+    const transport = new SshTransport({
+      host: 'example.com',
+      user: 'deploy',
+      root: '/var/www/html',
+      timeout: 30,
+    });
+    const parts = transport.buildCommandParts('mcp:file-upload', ['--filename=a.txt'], { stdin: true });
+    expect(parts.args[0]).toBe('-T');
+    expect(parts.args[1]).toBe('deploy@example.com');
+  });
 });

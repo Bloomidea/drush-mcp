@@ -1,6 +1,6 @@
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { quote } from 'shell-quote';
-import { BaseTransport, type TransportConfig, type CommandParts } from './base.js';
+import { BaseTransport, type TransportConfig, type CommandParts, type BuildOptions } from './base.js';
 import type { TransportResult } from '../types.js';
 
 export interface DockerTransportConfig extends TransportConfig {
@@ -39,7 +39,7 @@ export class DockerTransport extends BaseTransport {
       execFile('ssh', [
         `${this.user}@${this.host}`,
         `docker ps --filter ${filterArg} --format '{{.Names}}' | head -1`,
-      ], { timeout: 10000 }, (error, stdout) => {
+      ], { timeout: 10000 }, (_error, stdout) => {
         const name = stdout.toString().trim();
         if (!name) {
           reject(new Error(`No container found matching filter: ${this.containerFilter}`));
@@ -50,29 +50,32 @@ export class DockerTransport extends BaseTransport {
     });
   }
 
-  buildCommandParts(drushCommand: string, args: string[]): CommandParts {
+  private buildPartsFor(container: string, drushCommand: string, args: string[], options?: BuildOptions): CommandParts {
     const escapedArgs = args.map(a => quote([a]));
     const drushParts  = [this.drush, drushCommand, ...escapedArgs].join(' ');
-    return {
-      file: 'ssh',
-      args: [`${this.user}@${this.host}`, `docker exec ${quote([this.container!])} ${drushParts}`],
-    };
+    // -i keeps stdin attached inside the container.
+    const dockerExec  = options?.stdin
+      ? `docker exec -i ${quote([container])} ${drushParts}`
+      : `docker exec ${quote([container])} ${drushParts}`;
+    // -T disables pseudo-TTY on the SSH hop so stdin streams cleanly.
+    const sshArgs     = options?.stdin
+      ? ['-T', `${this.user}@${this.host}`, dockerExec]
+      : [`${this.user}@${this.host}`, dockerExec];
+    return { file: 'ssh', args: sshArgs };
+  }
+
+  buildCommandParts(drushCommand: string, args: string[], options?: BuildOptions): CommandParts {
+    return this.buildPartsFor(this.container!, drushCommand, args, options);
   }
 
   override async execute(drushCommand: string, args: string[]): Promise<TransportResult> {
-    // Resolve container dynamically if using filter
     if (!this.container && this.containerFilter) {
       const resolved = await this.resolveContainer();
-      // Build command with resolved container (don't cache - container may change on redeploy)
-      const fullArgs    = this.config.uri ? [...args, `--uri=${this.config.uri}`] : args;
-      const escapedArgs = fullArgs.map(a => quote([a]));
-      const drushParts  = [this.drush, drushCommand, ...escapedArgs].join(' ');
+      const fullArgs = this.config.uri ? [...args, `--uri=${this.config.uri}`] : args;
+      const parts    = this.buildPartsFor(resolved, drushCommand, fullArgs);
 
       return new Promise((resolve) => {
-        execFile('ssh', [
-          `${this.user}@${this.host}`,
-          `docker exec ${quote([resolved])} ${drushParts}`,
-        ], { timeout: this.config.timeout * 1000 }, (error, stdout, stderr) => {
+        execFile(parts.file, parts.args, { timeout: this.config.timeout * 1000 }, (error, stdout, stderr) => {
           resolve({
             stdout:   stdout.toString().trim(),
             stderr:   stderr.toString().trim(),
@@ -82,7 +85,37 @@ export class DockerTransport extends BaseTransport {
       });
     }
 
-    // Fall back to parent execute() for static container
     return super.execute(drushCommand, args);
+  }
+
+  override async executeWithStdin(drushCommand: string, args: string[], stdin: Buffer): Promise<TransportResult> {
+    if (!this.container && this.containerFilter) {
+      const resolved = await this.resolveContainer();
+      const fullArgs = this.config.uri ? [...args, `--uri=${this.config.uri}`] : args;
+      const parts    = this.buildPartsFor(resolved, drushCommand, fullArgs, { stdin: true });
+
+      return new Promise((resolve) => {
+        const child = spawn(parts.file, parts.args, {
+          timeout: this.config.timeout * 1000,
+          stdio:   ['pipe', 'pipe', 'pipe'],
+        });
+        const stdoutChunks: Buffer[] = [];
+        const stderrChunks: Buffer[] = [];
+        child.stdout.on('data', (c: Buffer) => stdoutChunks.push(c));
+        child.stderr.on('data', (c: Buffer) => stderrChunks.push(c));
+        child.stdin.on('error', () => { /* EPIPE on fast-fail */ });
+        child.on('close', (code, signal) => {
+          resolve({
+            stdout:   Buffer.concat(stdoutChunks).toString().trim(),
+            stderr:   Buffer.concat(stderrChunks).toString().trim(),
+            exitCode: signal ? 1 : (code ?? 1),
+          });
+        });
+        child.on('error', (err) => resolve({ stdout: '', stderr: err.message, exitCode: 1 }));
+        child.stdin.end(stdin);
+      });
+    }
+
+    return super.executeWithStdin(drushCommand, args, stdin);
   }
 }

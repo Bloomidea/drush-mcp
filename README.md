@@ -126,6 +126,27 @@ sites:
 
 The main difference is that drush-mcp requires an explicit `transport` field and supports additional options like `containerFilter` for dynamic Docker container lookup.
 
+### File upload settings (per-site)
+
+`drupal_file_upload` and `drupal_file_attach` accept optional `file_upload` settings in `drush-mcp.yml` (all keys optional, defaults shown):
+
+```yaml
+sites:
+  production:
+    transport: ssh
+    host: example.com
+    user: deploy
+    root: /var/www/html
+    uri: https://example.com   # required to get a real public URL back
+    file_upload:
+      max_size: 10485760                # 10 MB; further capped by upload_max_filesize / post_max_size
+      allowed_extensions: [txt, md, pdf, png, jpg, jpeg, gif, svg, log, sql, json, yaml, yml, zip, tar, gz]
+      default_uid: 0                    # 0 = anonymous; set to a real user ID for attribution
+      destination_prefix: mcp-uploads   # files land in <scheme>://<prefix>/<UTC YYYY-MM>/
+```
+
+Without a `uri` configured for the site, the tool still works but `url` in the response is `null` (drush in CLI mode without `--uri` cannot build a routable public URL).
+
 ### Environment Variables
 
 | Variable | Description |
@@ -182,7 +203,7 @@ If your Drupal site runs on [Coolify](https://coolify.io/):
 
 ## Tools
 
-All 17 tools are available regardless of transport:
+All 19 tools are available regardless of transport:
 
 | Tool | Description |
 |------|-------------|
@@ -200,6 +221,8 @@ All 17 tools are available regardless of transport:
 | `drupal_field_info` | Field definitions for entity type |
 | `drupal_user_create` | Create user account |
 | `drupal_user_block` | Block user account |
+| `drupal_file_upload` | Upload bytes and create a managed file entity |
+| `drupal_file_attach` | Upload bytes and attach to a file/image field on a node, comment, or other entity in one round trip |
 | `drupal_drush` | Run any Drush command |
 | `drupal_php_eval` | Execute PHP code |
 | `drupal_sql_query` | Run SQL query |
@@ -219,6 +242,8 @@ The `bloomidea/drush-mcp-bridge` Composer package provides structured entity com
 | `mcp:entity-update` | Update an entity |
 | `mcp:entity-list` | Query entities |
 | `mcp:introspect` | Introspect entity types and fields |
+| `mcp:file-upload` | Upload bytes (read from stdin) and create a managed file entity |
+| `mcp:file-attach` | Upload bytes and attach to a file/image field on an entity, with `file.usage` registration and rollback on failure |
 
 Install via Composer and Drush picks them up automatically - no additional registration needed.
 

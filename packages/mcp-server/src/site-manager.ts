@@ -73,4 +73,10 @@ export class SiteManager {
   listNames(): string[] {
     return Array.from(this.sites.keys());
   }
+
+  getSite(siteName: string): SiteConfig {
+    const site = this.sites.get(siteName);
+    if (!site) throw new Error(`Site '${siteName}' not found.`);
+    return site;
+  }
 }
