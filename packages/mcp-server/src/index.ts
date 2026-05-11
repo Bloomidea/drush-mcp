@@ -296,11 +296,19 @@ Config file:
   );
 
   // File tools
+  const contentBase64Param = z.string().optional().describe(
+    'Base64-encoded file bytes. Provide this OR content_path. Prefer content_path when running through an LLM provider, since dense base64 in tool arguments can trigger provider-side safety filters above ~15 KB.',
+  );
+  const contentPathParam = z.string().optional().describe(
+    'Absolute path to a file on the machine running the MCP server (typically your local laptop when using Claude Code). NOT a path on the Drupal server. Provide this OR content_base64. Preferred for files over ~10 KB.',
+  );
+
   server.tool(
     'drupal_file_upload',
-    'Upload a file to the Drupal site and create a managed file entity. Returns the new fid, uri, and url.',
+    'Upload a file to the Drupal site and create a managed file entity. Returns the new fid, uri, and url. Provide bytes via content_base64 OR a local filesystem path via content_path.',
     {
-      content_base64: z.string().describe('Base64-encoded file bytes'),
+      content_base64: contentBase64Param,
+      content_path:   contentPathParam,
       filename:       z.string().describe('Display filename including extension'),
       scheme:         z.enum(['public', 'private', 'temporary']).optional().describe('Stream wrapper scheme (default: public)'),
       destination:    z.string().optional().describe('Directory within the scheme (default: mcp-uploads/<YYYY-MM> in UTC)'),
@@ -312,9 +320,10 @@ Config file:
 
   server.tool(
     'drupal_file_attach',
-    'Upload a file and attach it to a file/image field on an existing entity in one round trip. Image fields support optional alt and title.',
+    'Upload a file and attach it to a file/image field on an existing entity in one round trip. Image fields support optional alt and title. Provide bytes via content_base64 OR a local filesystem path via content_path.',
     {
-      content_base64: z.string().describe('Base64-encoded file bytes'),
+      content_base64: contentBase64Param,
+      content_path:   contentPathParam,
       filename:       z.string().describe('Display filename including extension'),
       entity_type:    z.string().describe('Target entity type (e.g. node, comment, media)'),
       entity_id:      z.coerce.number().describe('Target entity ID'),

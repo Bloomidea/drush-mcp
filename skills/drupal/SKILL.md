@@ -1,6 +1,6 @@
 ---
 name: drupal
-version: 1.1.0
+version: 1.1.1
 description: >-
   Drupal site management: create, read, update, delete, and query entities,
   upload and attach files to fields, introspect field schemas, manage
@@ -181,6 +181,13 @@ drupal_entity_update(entity_type="node", id=12345, fields={"title": "New Title",
 
 Use `drupal_file_attach` to upload bytes and attach to a `file` or `image` field in one call. The tool registers `file.usage` against the host entity, so cascade-deletes work, and rolls back on save failure to avoid orphan files.
 
+**Choose the right input mode — `content_path` vs `content_base64`:**
+
+- **`content_path` (recommended for local agents)** — pass an absolute path on the machine running the MCP server. The MCP reads the file from disk and pipes it to Drush. **Use this whenever you have the file on the agent's local filesystem.** Required for files over ~10–15 KB if the agent talks to the MCP through an LLM provider, because dense base64 inside tool arguments can trigger provider-side safety filters and the call gets rejected. `content_path` keeps the LLM message stream clean (just a short path string).
+- **`content_base64`** — base64-encoded file bytes. Use when the file is not on the agent's local filesystem (cross-host MCP deployments, content generated in-memory, etc.). Slower for large files because the bytes traverse the LLM message stream.
+
+Exactly one of the two must be provided. Sending both → `VALIDATION_ERROR`. Sending neither → `VALIDATION_ERROR`.
+
 **Decide between `_upload` and `_attach`:**
 - `drupal_file_attach` — you know the target (entity + field) and want it bound in one round trip. Field-level extension and size limits are validated *before* bytes are written.
 - `drupal_file_upload` — you only need a managed file entity (e.g. to reference from a custom workflow). Returns `fid` for later use. The agent is then responsible for either attaching it (which registers usage) or deleting it.
@@ -194,11 +201,11 @@ Most `file`/`image` fields share the same shape. Common Atrium-style fields:
 
 When unsure, call `drupal_introspect` on the bundle and look for fields with `"type":"file"` or `"type":"image"`.
 
-**Attach a PRD/document to an existing task (node):**
+**Attach a PRD/document to an existing task (node) — canonical local agent flow:**
 ```
 drupal_file_attach(
   filename="PRD-feature.md",
-  content_base64="<base64 of file bytes>",
+  content_path="/Users/me/Dev/myproject/PRD-feature.md",
   entity_type="node",
   entity_id=403055,
   field_name="field_shared_files",
@@ -213,7 +220,7 @@ drupal_file_attach(
 ```
 drupal_file_attach(
   filename="screenshot.png",
-  content_base64="<base64>",
+  content_path="/tmp/screenshot.png",
   entity_type="comment",
   entity_id=190282,
   field_name="field_shared_files",
@@ -225,10 +232,22 @@ drupal_file_attach(
 ```
 drupal_file_attach(
   filename="hero.jpg",
-  content_base64="<base64>",
+  content_path="/Users/me/Pictures/hero.jpg",
   entity_type="node", entity_id=12345,
   field_name="field_image",
   alt="Sunset over the harbour", title="Hero image",
+  uid=4
+)
+```
+
+**Cross-host fallback (when the file is not on the agent's local filesystem):**
+```
+drupal_file_attach(
+  filename="generated.md",
+  content_base64="<base64 of bytes generated in-memory>",
+  entity_type="node",
+  entity_id=403055,
+  field_name="field_shared_files",
   uid=4
 )
 ```
@@ -246,9 +265,13 @@ Default `mode` is `append` (adds to the existing list, respecting cardinality). 
 
 | Code | Cause |
 |---|---|
+| `VALIDATION_ERROR` | Both `content_base64` and `content_path` provided, or neither |
+| `PATH_NOT_ABSOLUTE` | `content_path` is not an absolute path |
+| `PATH_NOT_FOUND` | `content_path` does not exist or is not readable by the MCP server process |
+| `PATH_NOT_FILE` | `content_path` points to a directory or non-regular file |
 | `EXTENSION_FORBIDDEN` | Extension not in the configured allowlist or the field's `file_extensions` setting |
 | `SIZE_EXCEEDED` | Larger than `max_size`, the field's `max_filesize`, or PHP `upload_max_filesize`/`post_max_size` |
-| `INVALID_SCHEME` / `INVALID_DESTINATION` | Bad scheme or path traversal attempt |
+| `INVALID_SCHEME` / `INVALID_DESTINATION` | Bad scheme or path traversal attempt on the *destination* (inside Drupal) |
 | `ENTITY_NOT_FOUND` / `FIELD_INVALID` | Target entity doesn't exist or field isn't a `file`/`image` type |
 | `CARDINALITY_EXCEEDED` | `mode=append` against a full single-cardinality field — use `mode=replace` |
 

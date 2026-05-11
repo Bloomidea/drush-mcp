@@ -1,12 +1,15 @@
 import { createHash } from 'crypto';
+import { readFileSync, statSync } from 'fs';
+import { isAbsolute, resolve } from 'path';
 import type { DrushArgs, FileUploadConfig } from '../types.js';
 
 export interface FileUploadInput {
-  content_base64: string;
-  filename:       string;
-  scheme?:        'public' | 'private' | 'temporary';
-  destination?:   string;
-  uid?:           number;
+  content_base64?: string;
+  content_path?:   string;
+  filename:        string;
+  scheme?:         'public' | 'private' | 'temporary';
+  destination?:    string;
+  uid?:            number;
 }
 
 export interface FileAttachInput extends FileUploadInput {
@@ -41,7 +44,7 @@ function extensionOf(filename: string): string {
   return idx >= 0 ? filename.slice(idx + 1).toLowerCase() : '';
 }
 
-function decodeBase64(content: string): Buffer {
+function decodeBase64(content: string, maxSize: number): Buffer {
   // Reject non-base64 characters (Buffer.from with 'base64' silently ignores).
   if (!/^[A-Za-z0-9+/=\s]*$/.test(content)) {
     throw new FilePreflightError('INVALID_BASE64', 'content_base64 contains non-base64 characters');
@@ -53,7 +56,59 @@ function decodeBase64(content: string): Buffer {
   if (reencoded.replace(/=+$/, '') !== stripped.replace(/=+$/, '')) {
     throw new FilePreflightError('INVALID_BASE64', 'content_base64 is not valid base64 (round-trip mismatch)');
   }
+  if (buf.byteLength > maxSize) {
+    throw new FilePreflightError(
+      'SIZE_EXCEEDED',
+      `payload is ${buf.byteLength} bytes, max_size is ${maxSize} bytes`,
+    );
+  }
   return buf;
+}
+
+function readBufferFromPath(rawPath: string, maxSize: number): Buffer {
+  if (!isAbsolute(rawPath)) {
+    throw new FilePreflightError('PATH_NOT_ABSOLUTE', 'content_path must be an absolute path');
+  }
+  const resolved = resolve(rawPath);
+
+  let stat;
+  try {
+    stat = statSync(resolved);
+  } catch (err) {
+    throw new FilePreflightError('PATH_NOT_FOUND', `content_path not readable: ${(err as Error).message}`);
+  }
+  if (!stat.isFile()) {
+    throw new FilePreflightError('PATH_NOT_FILE', 'content_path is not a regular file');
+  }
+  if (stat.size > maxSize) {
+    throw new FilePreflightError(
+      'SIZE_EXCEEDED',
+      `file is ${stat.size} bytes, max_size is ${maxSize} bytes`,
+    );
+  }
+  return readFileSync(resolved);
+}
+
+function readContentBuffer(input: FileUploadInput, maxSize: number): Buffer {
+  const hasB64  = typeof input.content_base64 === 'string' && input.content_base64.length > 0;
+  const hasPath = typeof input.content_path   === 'string' && input.content_path.length   > 0;
+
+  if (hasB64 && hasPath) {
+    throw new FilePreflightError(
+      'VALIDATION_ERROR',
+      'provide either content_base64 or content_path, not both',
+    );
+  }
+  if (!hasB64 && !hasPath) {
+    throw new FilePreflightError(
+      'VALIDATION_ERROR',
+      'either content_base64 or content_path is required',
+    );
+  }
+  if (hasPath) {
+    return readBufferFromPath(input.content_path!, maxSize);
+  }
+  return decodeBase64(input.content_base64!, maxSize);
 }
 
 export function preflight(input: FileUploadInput, fileConfig: Required<FileUploadConfig>): { buf: Buffer; sha256: string } {
@@ -63,13 +118,7 @@ export function preflight(input: FileUploadInput, fileConfig: Required<FileUploa
   if (input.filename.includes('/') || input.filename.includes('\\')) {
     throw new FilePreflightError('VALIDATION_ERROR', 'filename must not contain path separators');
   }
-  const buf = decodeBase64(input.content_base64);
-  if (buf.byteLength > fileConfig.max_size) {
-    throw new FilePreflightError(
-      'SIZE_EXCEEDED',
-      `payload is ${buf.byteLength} bytes, max_size is ${fileConfig.max_size} bytes`,
-    );
-  }
+  const buf = readContentBuffer(input, fileConfig.max_size);
   const ext = extensionOf(input.filename);
   if (!ext) {
     throw new FilePreflightError('EXTENSION_FORBIDDEN', 'filename has no extension');

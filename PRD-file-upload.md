@@ -62,7 +62,8 @@ Input:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `content_base64` | string | — | Base64-encoded file bytes. Required. The TS layer decodes and pipes the raw bytes to the bridge over stdin (see §3.1). |
+| `content_base64` | string | — | Base64-encoded file bytes. Provide this **OR** `content_path` (mutually exclusive). The TS layer decodes and pipes the raw bytes to the bridge over stdin (see §3.1). |
+| `content_path` | string | — | Absolute path to a file on the machine running the MCP server. Provide this **OR** `content_base64`. Preferred for files over ~10 KB when the agent talks to the MCP through an LLM provider, because dense base64 in tool arguments can trigger provider safety filters. See [PRD-file-upload-content-path.md](./PRD-file-upload-content-path.md). |
 | `filename` | string | — | Display filename including extension. Required. Sanitised by Drupal core's filename sanitiser before write. |
 | `scheme` | enum: `public` / `private` / `temporary` | `public` | Drupal stream wrapper scheme. Validated against `StreamWrapperManager`. |
 | `destination` | string | `mcp-uploads/<YYYY-MM>/` (UTC) | Directory within the scheme. The final URI is `<scheme>://<destination>/<sanitised filename>`. Collisions resolved via `FileExists::Rename` (`_0`, `_1`, …). |
@@ -88,7 +89,11 @@ Output:
 
 Errors:
 
-- `INVALID_BASE64` — content not decodable.
+- `INVALID_BASE64` — `content_base64` not decodable.
+- `PATH_NOT_ABSOLUTE` — `content_path` is not an absolute path.
+- `PATH_NOT_FOUND` — `content_path` does not exist or is not readable.
+- `PATH_NOT_FILE` — `content_path` points to a directory, socket, device, etc.
+- `VALIDATION_ERROR` — both `content_base64` and `content_path` provided, or neither.
 - `INVALID_SCHEME` — scheme not registered in this site.
 - `INVALID_DESTINATION` — destination contains `..`, an absolute path, or escapes the scheme root.
 - `WRITE_FAILED` — filesystem write rejected (permissions, disk full).
@@ -151,12 +156,12 @@ export interface DrushArgsWithStdin extends DrushArgs {
 ```
 
 The TS layer:
-1. Validates input (Zod schema in `index.ts`) — non-empty `filename`, valid `scheme`, `content_base64` decodes.
+1. Validates input (Zod schema in `index.ts`) — non-empty `filename`, valid `scheme`, exactly one of `content_base64` / `content_path` present, base64 decodes (when provided).
 2. **Pre-flight against cached site config** (`drush-mcp.yml`):
-   - Reject with `SIZE_EXCEEDED` if decoded size > `file_upload.max_size`.
+   - Reject with `SIZE_EXCEEDED` if size > `file_upload.max_size`. For `content_path` this is checked via `stat.size` *before* reading the file, so oversized files never enter memory.
    - Reject with `EXTENSION_FORBIDDEN` if the filename's extension is not in `file_upload.allowed_extensions`.
    These are cheap local checks against config the TS layer already has in memory; they save a round trip on the obvious rejects without duplicating the authoritative server-side logic.
-3. Decodes `content_base64` → `Buffer`. The decoded bytes go on `stdin`; everything else (`--filename`, `--scheme`, `--destination`, `--uid`, `--size`, `--sha256`, plus the attach target if applicable) goes through argv as `--key=value`. `--size` is sent so the bridge can fail fast on size before reading stdin; `--sha256` lets the bridge verify the bytes match what the client claimed.
+3. Produces the payload `Buffer`: either by decoding `content_base64` or by reading the file at `content_path`. The bytes go on `stdin`; everything else (`--filename`, `--scheme`, `--destination`, `--uid`, `--size`, `--sha256`, plus the attach target if applicable) goes through argv as `--key=value`. `--size` is sent so the bridge can fail fast on size before reading stdin; `--sha256` lets the bridge verify the bytes match what the client claimed.
 4. Calls the transport's new `executeWithStdin('mcp:file-upload', argv, buf)`.
 
 Registered in `packages/mcp-server/src/index.ts` between `drupal_user_block` and `drupal_drush`, matching §9.

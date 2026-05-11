@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { afterAll, beforeAll, describe, it, expect } from 'vitest';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import {
   buildFileUploadArgs,
   buildFileAttachArgs,
@@ -135,5 +138,142 @@ describe('buildFileAttachArgs', () => {
       entity_id:      0,
       field_name:     'field_files',
     }, cfg)).toThrowError(/entity_id/);
+  });
+});
+
+describe('content_path input', () => {
+  let tmp: string;
+  let helloPath:    string;
+  let oversizePath: string;
+  let dirPath:      string;
+  let badExtPath:   string;
+
+  beforeAll(() => {
+    tmp          = mkdtempSync(join(tmpdir(), 'drush-mcp-content-path-'));
+    helloPath    = join(tmp, 'hello.md');
+    oversizePath = join(tmp, 'big.md');
+    dirPath      = join(tmp, 'subdir');
+    badExtPath   = join(tmp, 'evil.exe');
+
+    writeFileSync(helloPath,    'hello world');
+    writeFileSync(oversizePath, Buffer.alloc(100));
+    mkdirSync(dirPath);
+    writeFileSync(badExtPath,   'noop');
+  });
+
+  afterAll(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('reads file from disk and matches base64 round-trip', () => {
+    const args = buildFileUploadArgs({
+      content_path: helloPath,
+      filename:     'hello.md',
+    }, cfg);
+    expect(args.stdin.toString()).toBe('hello world');
+    expect(args.args).toContain('--size=11');
+    // sha256("hello world") = b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9
+    expect(args.args).toContain('--sha256=b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9');
+  });
+
+  it('rejects non-absolute content_path', () => {
+    try {
+      buildFileUploadArgs({ content_path: 'relative/path.md', filename: 'a.md' }, cfg);
+      throw new Error('expected throw');
+    }
+    catch (err) {
+      expect(err).toBeInstanceOf(FilePreflightError);
+      expect((err as FilePreflightError).code).toBe('PATH_NOT_ABSOLUTE');
+    }
+  });
+
+  it('rejects content_path to non-existent file', () => {
+    try {
+      buildFileUploadArgs({ content_path: join(tmp, 'does-not-exist.md'), filename: 'a.md' }, cfg);
+      throw new Error('expected throw');
+    }
+    catch (err) {
+      expect((err as FilePreflightError).code).toBe('PATH_NOT_FOUND');
+    }
+  });
+
+  it('rejects content_path that points at a directory', () => {
+    try {
+      buildFileUploadArgs({ content_path: dirPath, filename: 'a.md' }, cfg);
+      throw new Error('expected throw');
+    }
+    catch (err) {
+      expect((err as FilePreflightError).code).toBe('PATH_NOT_FILE');
+    }
+  });
+
+  it('rejects content_path to oversized file', () => {
+    const tinyCfg = { ...cfg, max_size: 50 };
+    try {
+      buildFileUploadArgs({ content_path: oversizePath, filename: 'big.md' }, tinyCfg);
+      throw new Error('expected throw');
+    }
+    catch (err) {
+      expect((err as FilePreflightError).code).toBe('SIZE_EXCEEDED');
+    }
+  });
+
+  it('rejects content_path to file with disallowed extension', () => {
+    try {
+      buildFileUploadArgs({ content_path: badExtPath, filename: 'evil.exe' }, cfg);
+      throw new Error('expected throw');
+    }
+    catch (err) {
+      expect((err as FilePreflightError).code).toBe('EXTENSION_FORBIDDEN');
+    }
+  });
+
+  it('rejects when both content_base64 and content_path are provided', () => {
+    try {
+      buildFileUploadArgs({
+        content_base64: b64('hi'),
+        content_path:   helloPath,
+        filename:       'a.md',
+      }, cfg);
+      throw new Error('expected throw');
+    }
+    catch (err) {
+      expect((err as FilePreflightError).code).toBe('VALIDATION_ERROR');
+      expect((err as FilePreflightError).message).toMatch(/not both/);
+    }
+  });
+
+  it('rejects when neither is provided', () => {
+    try {
+      buildFileUploadArgs({ filename: 'a.md' } as never, cfg);
+      throw new Error('expected throw');
+    }
+    catch (err) {
+      expect((err as FilePreflightError).code).toBe('VALIDATION_ERROR');
+      expect((err as FilePreflightError).message).toMatch(/required/);
+    }
+  });
+
+  it('treats empty content_base64 + no content_path as "neither provided"', () => {
+    try {
+      buildFileUploadArgs({ content_base64: '', filename: 'a.md' }, cfg);
+      throw new Error('expected throw');
+    }
+    catch (err) {
+      expect((err as FilePreflightError).code).toBe('VALIDATION_ERROR');
+      expect((err as FilePreflightError).message).toMatch(/required/);
+    }
+  });
+
+  it('content_path flows through buildFileAttachArgs identically', () => {
+    const args = buildFileAttachArgs({
+      content_path: helloPath,
+      filename:     'hello.md',
+      entity_type:  'node',
+      entity_id:    1,
+      field_name:   'field_shared_files',
+    }, cfg);
+    expect(args.command).toBe('mcp:file-attach');
+    expect(args.stdin.toString()).toBe('hello world');
   });
 });
