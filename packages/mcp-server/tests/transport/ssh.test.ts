@@ -13,7 +13,7 @@ describe('SshTransport', () => {
     const parts = transport.buildCommandParts('cache:rebuild', []);
     expect(parts.file).toBe('ssh');
     expect(parts.args[0]).toBe('deploy@example.com');
-    expect(parts.args[1]).toContain('cd /var/www/html');
+    expect(parts.args[1]).toContain("cd '/var/www/html'");
     expect(parts.args[1]).toContain('vendor/bin/drush cache:rebuild');
   });
 

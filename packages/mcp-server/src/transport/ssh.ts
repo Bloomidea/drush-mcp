@@ -1,4 +1,4 @@
-import { quote } from 'shell-quote';
+import { shellQuote } from './shell.js';
 import { BaseTransport, type TransportConfig, type CommandParts, type BuildOptions } from './base.js';
 
 export interface SshTransportConfig extends TransportConfig {
@@ -23,9 +23,9 @@ export class SshTransport extends BaseTransport {
   }
 
   buildCommandParts(drushCommand: string, args: string[], options?: BuildOptions): CommandParts {
-    const escapedArgs = args.map(a => quote([a]));
+    const escapedArgs = args.map(a => shellQuote(a));
     const drushParts  = [this.drush, drushCommand, ...escapedArgs].join(' ');
-    const remoteCmd   = `cd ${quote([this.root])} && ${drushParts}`;
+    const remoteCmd   = `cd ${shellQuote(this.root)} && ${drushParts}`;
     // -T disables pseudo-TTY allocation so stdin streams cleanly.
     const sshArgs     = options?.stdin
       ? ['-T', `${this.user}@${this.host}`, remoteCmd]

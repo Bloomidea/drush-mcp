@@ -41,6 +41,7 @@ Power tools (`drupal_drush`, `drupal_php_eval`, `drupal_sql_query`) skip the bri
 - Args are passed via shell argv. SSH and docker transports nest the command inside `ssh user@host '... docker exec ... drush ...'`, so payloads compete with `ARG_MAX` (typically a few hundred KB after nesting).
 - Anything above ~200 KB needs a different mechanism than `--data=<base64>`. There is no stdin path on the transport today; adding one means extending `Transport.execute`.
 - The `--uri` flag is appended automatically by `transport/base.ts:19` when `config.uri` is set; do not pass it from tool stubs.
+- SSH and docker quote every argument with `shellQuote` (`transport/shell.ts`), a POSIX single-quote wrapper. Do not swap it back for `shell-quote`'s `quote()`: for values holding both a single quote and whitespace it picks a double-quoted form and escapes `!` as `\!`, which a non-interactive bash does not unescape, so `!==` reached PHP as `\!==` and exclamation marks landed inside stored content with a stray backslash.
 
 ## Versioning
 

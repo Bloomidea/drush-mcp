@@ -13,7 +13,7 @@ describe('DockerTransport', () => {
     const parts = transport.buildCommandParts('cache:rebuild', []);
     expect(parts.file).toBe('ssh');
     expect(parts.args[0]).toBe('root@176.9.125.8');
-    expect(parts.args[1]).toContain('docker exec atrium-web');
+    expect(parts.args[1]).toContain("docker exec 'atrium-web'");
     expect(parts.args[1]).toContain('/app/vendor/bin/drush cache:rebuild');
   });
 
@@ -27,7 +27,7 @@ describe('DockerTransport', () => {
     });
     const parts = transport.buildCommandParts('core:status', ['--format=json']);
     expect(parts.args[1]).toContain('/app/vendor/bin/drush core:status');
-    expect(parts.args[1]).toContain('--format\\=json');
+    expect(parts.args[1]).toContain('--format=json');
   });
 
   it('can be constructed with containerFilter instead of container', () => {
@@ -47,6 +47,6 @@ describe('DockerTransport', () => {
     });
     const parts = transport.buildCommandParts('mcp:file-upload', ['--filename=a.txt'], { stdin: true });
     expect(parts.args[0]).toBe('-T');
-    expect(parts.args[2]).toContain('docker exec -i atrium-web');
+    expect(parts.args[2]).toContain("docker exec -i 'atrium-web'");
   });
 });

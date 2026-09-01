@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'child_process';
-import { quote } from 'shell-quote';
+import { shellQuote } from './shell.js';
 import { BaseTransport, type TransportConfig, type CommandParts, type BuildOptions } from './base.js';
 import type { TransportResult } from '../types.js';
 
@@ -35,7 +35,7 @@ export class DockerTransport extends BaseTransport {
       return Promise.reject(new Error('Docker transport requires either container or containerFilter.'));
     }
     return new Promise((resolve, reject) => {
-      const filterArg = quote([this.containerFilter!]);
+      const filterArg = shellQuote(this.containerFilter!);
       execFile('ssh', [
         `${this.user}@${this.host}`,
         `docker ps --filter ${filterArg} --format '{{.Names}}' | head -1`,
@@ -51,12 +51,12 @@ export class DockerTransport extends BaseTransport {
   }
 
   private buildPartsFor(container: string, drushCommand: string, args: string[], options?: BuildOptions): CommandParts {
-    const escapedArgs = args.map(a => quote([a]));
+    const escapedArgs = args.map(a => shellQuote(a));
     const drushParts  = [this.drush, drushCommand, ...escapedArgs].join(' ');
     // -i keeps stdin attached inside the container.
     const dockerExec  = options?.stdin
-      ? `docker exec -i ${quote([container])} ${drushParts}`
-      : `docker exec ${quote([container])} ${drushParts}`;
+      ? `docker exec -i ${shellQuote(container)} ${drushParts}`
+      : `docker exec ${shellQuote(container)} ${drushParts}`;
     // -T disables pseudo-TTY on the SSH hop so stdin streams cleanly.
     const sshArgs     = options?.stdin
       ? ['-T', `${this.user}@${this.host}`, dockerExec]
