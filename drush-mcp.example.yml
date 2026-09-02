@@ -1,6 +1,8 @@
 # drush-mcp configuration
 # Copy to drush-mcp.yml in your project root or home directory.
 # Or pass --config <path> to use a custom location.
+# Only read when the server is started without transport/host flags (a site
+# defined by CLI flags wins). Per-site blocks such as file_upload need this file.
 
 sites:
   # Local development (DDEV, Lando, or plain Drush)
@@ -50,7 +52,7 @@ sites:
   #   uri: https://example.com   # required so drupal_file_upload returns a real URL
   #   file_upload:
   #     max_size: 10485760                # 10 MB; capped by upload_max_filesize / post_max_size
-  #     allowed_extensions: [txt, md, pdf, png, jpg, sql, log, yml, json]
+  #     allowed_extensions: [txt, md, pdf, png, jpg, sql, log, yml, json]  # replaces the default list, does not extend it
   #     default_uid: 0                    # 0 = anonymous (recommended); set a user ID for attribution
   #     destination_prefix: mcp-uploads   # default; files land in <scheme>://<prefix>/<UTC YYYY-MM>/
 

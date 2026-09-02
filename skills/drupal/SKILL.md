@@ -1,6 +1,6 @@
 ---
 name: drupal
-version: 1.1.1
+version: 1.2.0
 description: >-
   Drupal site management: create, read, update, delete, and query entities,
   upload and attach files to fields, introspect field schemas, manage
@@ -257,7 +257,7 @@ drupal_file_attach(
 Default `mode` is `append` (adds to the existing list, respecting cardinality). Pass `mode="replace"` to overwrite. On a `cardinality=1` field, append into a populated field returns `CARDINALITY_EXCEEDED` — use `replace` instead.
 
 **Defaults that matter:**
-- `scheme` defaults to `public`. Use `private` for sensitive uploads (requires Drupal's private filesystem to be configured).
+- `scheme` follows the site. `drupal_file_attach` uses the target field's `uri_scheme` (what the Drupal upload widget would do) and `drupal_file_upload` uses the site's `system.file` `default_scheme`. Only pass `scheme` when you need to override that, e.g. `private` for a sensitive file on a site whose default is `public`. Before 0.4.0 both tools defaulted to `public` regardless of the field; if you see uploads landing in `public://` on a private-files site, the bridge is older than 0.4.0.
 - `destination` defaults to `mcp-uploads/<UTC YYYY-MM>/` so AI uploads stay separate from editorial ones.
 - `uid` defaults to the site's `default_uid` (anonymous unless configured). For Atrium and similar group-aware sites, pass an explicit `uid` because anonymous users typically can't post comments or save entities with restricted text formats.
 

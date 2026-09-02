@@ -71,7 +71,7 @@ drush-mcp --docker --host example.com --user deploy --container-filter "label=co
 
 ### Config File
 
-Create `drush-mcp.yml` in your project root or home directory, or pass `--config path`:
+Create `drush-mcp.yml` in your project root or home directory, or pass `--config path`. The file is used when no transport or host flag is given on the command line; a site defined by CLI flags takes precedence over it (only the file's `defaults:` block is still read). Per-site settings such as `file_upload` therefore need the file route: point the MCP server entry at `drush-mcp` with no site flags and describe the sites in the YAML.
 
 ```yaml
 sites:
@@ -127,6 +127,8 @@ sites:
 The main difference is that drush-mcp requires an explicit `transport` field and supports additional options like `containerFilter` for dynamic Docker container lookup.
 
 ### File upload settings (per-site)
+
+Uploads land in the scheme the site expects: `drupal_file_attach` uses the target field's `uri_scheme` and `drupal_file_upload` uses `system.file` `default_scheme`. Pass `scheme` only to override.
 
 `drupal_file_upload` and `drupal_file_attach` accept optional `file_upload` settings in `drush-mcp.yml` (all keys optional, defaults shown):
 
