@@ -4,7 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-import { parseCliArgs, loadConfigFile, loadConfigFromEnv, mergeConfig } from './config.js';
+import { parseCliArgs, configPathFromArgs, loadConfigFile, loadConfigFromEnv, mergeConfig } from './config.js';
 import { normalizeError } from './errors.js';
 import { SiteManager } from './site-manager.js';
 import type { DrushArgs } from './types.js';
@@ -47,7 +47,7 @@ Options:
   --root <path>           Drupal root path on remote
   --container <name>      Docker container name
   --container-filter <f>  Docker filter for dynamic container lookup
-  --config <path>         Path to config file
+  --config <path>         Path to config file (ignored when site flags are given)
   --version, -v           Show version
   --help, -h              Show this help
 
@@ -61,13 +61,14 @@ Environment variables:
   DRUSH_MCP_CONTAINER_FILTER  Docker filter expression
 
 Config file:
-  drush-mcp.yml in cwd or home dir, or --config <path>
+  drush-mcp.yml in cwd or home dir, or --config <path>. Used only when no
+  transport/host flag is given; a site defined by flags takes precedence.
 `);
     process.exit(0);
   }
 
   const cliConfig   = parseCliArgs(args);
-  const fileConfig  = loadConfigFile();
+  const fileConfig  = loadConfigFile(configPathFromArgs(args));
   const envConfig   = loadConfigFromEnv();
   const config      = mergeConfig(cliConfig, fileConfig, envConfig);
   const siteManager = new SiteManager(config);
@@ -310,7 +311,7 @@ Config file:
       content_base64: contentBase64Param,
       content_path:   contentPathParam,
       filename:       z.string().describe('Display filename including extension'),
-      scheme:         z.enum(['public', 'private', 'temporary']).optional().describe('Stream wrapper scheme (default: public)'),
+      scheme:         z.enum(['public', 'private', 'temporary']).optional().describe('Stream wrapper scheme. Default: the system.file default_scheme of the site, so the file lands where the site keeps its files. Pass explicitly only when you need a different one.'),
       destination:    z.string().optional().describe('Directory within the scheme (default: mcp-uploads/<YYYY-MM> in UTC)'),
       uid:            z.coerce.number().optional().describe('Owning user ID (default: site-configured default_uid)'),
       site:           siteParam,
@@ -331,7 +332,7 @@ Config file:
       mode:           z.enum(['append', 'replace']).optional().describe('Append to or replace existing field items (default: append)'),
       alt:            z.string().optional().describe('Alt text (image fields only)'),
       title:          z.string().optional().describe('Title text (image fields only)'),
-      scheme:         z.enum(['public', 'private', 'temporary']).optional().describe('Stream wrapper scheme (default: public)'),
+      scheme:         z.enum(['public', 'private', 'temporary']).optional().describe('Stream wrapper scheme. Default: the uri_scheme setting of the target field, which is what the Drupal upload widget would use. Pass explicitly only when you need to override the field.'),
       destination:    z.string().optional().describe('Directory within the scheme (default: mcp-uploads/<YYYY-MM> in UTC)'),
       uid:            z.coerce.number().optional().describe('Owning user ID (default: site-configured default_uid)'),
       site:           siteParam,

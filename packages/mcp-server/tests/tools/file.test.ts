@@ -22,7 +22,7 @@ describe('buildFileUploadArgs', () => {
     expect(args.stdin).toBeInstanceOf(Buffer);
     expect(args.stdin.toString()).toBe('hello world');
     expect(args.args).toContain('--filename=note.txt');
-    expect(args.args).toContain('--scheme=public');
+    expect(args.args.some((a) => a.startsWith('--scheme='))).toBe(false);
     expect(args.args).toContain('--uid=0');
     expect(args.args).toContain('--size=11');
     expect(args.args.some(a => a.startsWith('--sha256='))).toBe(true);

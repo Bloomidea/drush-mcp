@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DrushMcp\Drush\Commands;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeBundleInfoInterface;
@@ -40,6 +41,8 @@ final class McpBridgeDrushCommands extends DrushCommands {
    *   The entity serializer.
    * @param \Drupal\Core\Session\AccountSwitcherInterface $accountSwitcher
    *   The account switcher service.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
+   *   The config factory, used to read system.file default_scheme.
    */
   public function __construct(
     protected EntityTypeManagerInterface $entityTypeManager,
@@ -51,6 +54,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
     protected FileRepositoryInterface $fileRepository,
     protected FileUsageInterface $fileUsage,
     protected StreamWrapperManagerInterface $streamWrapperManager,
+    protected ConfigFactoryInterface $configFactory,
   ) {
     parent::__construct();
   }
@@ -75,6 +79,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
       $container->get('file.repository'),
       $container->get('file.usage'),
       $container->get('stream_wrapper_manager'),
+      $container->get('config.factory'),
     );
   }
 
@@ -439,7 +444,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
    */
   #[CLI\Command(name: 'mcp:file-upload', aliases: ['mfu'])]
   #[CLI\Option(name: 'filename', description: 'Display filename including extension')]
-  #[CLI\Option(name: 'scheme', description: 'Stream wrapper scheme (public, private, temporary)')]
+  #[CLI\Option(name: 'scheme', description: 'Stream wrapper scheme (public, private, temporary). Defaults to system.file default_scheme.')]
   #[CLI\Option(name: 'destination', description: 'Directory within the scheme')]
   #[CLI\Option(name: 'uid', description: 'Owning user ID')]
   #[CLI\Option(name: 'size', description: 'Declared payload size in bytes (verified against stdin)')]
@@ -448,7 +453,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
   #[CLI\Option(name: 'field-max-size', description: 'Max size in bytes from the target field instance')]
   public function fileUpload(array $options = [
     'filename'         => self::REQ,
-    'scheme'           => 'public',
+    'scheme'           => NULL,
     'destination'      => self::REQ,
     'uid'              => '0',
     'size'             => self::REQ,
@@ -479,7 +484,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
    */
   #[CLI\Command(name: 'mcp:file-attach', aliases: ['mfa'])]
   #[CLI\Option(name: 'filename', description: 'Display filename including extension')]
-  #[CLI\Option(name: 'scheme', description: 'Stream wrapper scheme (public, private, temporary)')]
+  #[CLI\Option(name: 'scheme', description: 'Stream wrapper scheme (public, private, temporary). Defaults to the uri_scheme of the target field.')]
   #[CLI\Option(name: 'destination', description: 'Directory within the scheme')]
   #[CLI\Option(name: 'uid', description: 'Owning user ID')]
   #[CLI\Option(name: 'size', description: 'Declared payload size in bytes')]
@@ -492,7 +497,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
   #[CLI\Option(name: 'title', description: 'Title text for image fields')]
   public function fileAttach(array $options = [
     'filename'    => self::REQ,
-    'scheme'      => 'public',
+    'scheme'      => NULL,
     'destination' => self::REQ,
     'uid'         => '0',
     'size'        => self::REQ,
@@ -547,6 +552,11 @@ final class McpBridgeDrushCommands extends DrushCommands {
       // Feed field-aware constraints into the upload step.
       $fieldSettings = $fieldDefinition->getSettings();
       $uploadOptions = $options;
+      // Store the file where the field expects it, as the upload widget would.
+      // An explicit --scheme still wins.
+      if (empty($uploadOptions['scheme'])) {
+        $uploadOptions['scheme'] = $fieldDefinition->getFieldStorageDefinition()->getSetting('uri_scheme') ?: NULL;
+      }
       $uploadOptions['field-extensions'] = $fieldSettings['file_extensions'] ?? NULL;
       $uploadOptions['field-max-size']   = $this->parseMaxFilesize($fieldSettings['max_filesize'] ?? NULL);
 
@@ -613,6 +623,17 @@ final class McpBridgeDrushCommands extends DrushCommands {
   }
 
   /**
+   * Returns the site-wide default stream wrapper scheme.
+   *
+   * Mirrors what core uses for file fields without an explicit uri_scheme:
+   * system.file default_scheme, falling back to public.
+   */
+  private function defaultScheme(): string {
+    $scheme = $this->configFactory->get('system.file')->get('default_scheme');
+    return is_string($scheme) && $scheme !== '' ? $scheme : 'public';
+  }
+
+  /**
    * Performs the full upload flow: argv validation, stdin read, writeData.
    *
    * @param array<string, mixed> $options
@@ -625,7 +646,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
    */
   private function processUpload(array $options): FileInterface {
     $filename       = (string) $options['filename'];
-    $scheme         = (string) ($options['scheme'] ?? 'public');
+    $scheme         = !empty($options['scheme']) ? (string) $options['scheme'] : $this->defaultScheme();
     $destination    = (string) $options['destination'];
     $uid            = (int)    ($options['uid'] ?? 0);
     $declaredSize   = (int)    $options['size'];

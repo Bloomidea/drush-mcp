@@ -134,17 +134,20 @@ export function preflight(input: FileUploadInput, fileConfig: Required<FileUploa
 }
 
 function commonArgs(input: FileUploadInput, fileConfig: Required<FileUploadConfig>, buf: Buffer, sha256: string): string[] {
-  const scheme       = input.scheme ?? 'public';
   const destination  = input.destination ?? defaultDestination(fileConfig.destination_prefix);
   const uid          = input.uid ?? fileConfig.default_uid;
-  return [
+  const args = [
     `--filename=${input.filename}`,
-    `--scheme=${scheme}`,
     `--destination=${destination}`,
     `--uid=${uid}`,
     `--size=${buf.byteLength}`,
     `--sha256=${sha256}`,
   ];
+  // Only forward an explicit scheme. Left out, the bridge falls back to the
+  // target field's uri_scheme (attach) or the site's default scheme (upload),
+  // which is what Drupal's own upload widget would do.
+  if (input.scheme !== undefined) args.push(`--scheme=${input.scheme}`);
+  return args;
 }
 
 export function buildFileUploadArgs(input: FileUploadInput, fileConfig: Required<FileUploadConfig>): FileDrushArgs {
