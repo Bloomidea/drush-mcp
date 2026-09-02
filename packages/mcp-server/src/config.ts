@@ -10,7 +10,7 @@ export function resolveTransportType(flags: Record<string, unknown>): SiteConfig
   return 'local';
 }
 
-export function parseCliArgs(args: string[]): DrushMcpConfig {
+function parseFlags(args: string[]): Record<string, string | boolean> {
   const flags: Record<string, string | boolean> = {};
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -24,6 +24,23 @@ export function parseCliArgs(args: string[]): DrushMcpConfig {
         flags[key] = true;
       }
     }
+  }
+  return flags;
+}
+
+// Flags that describe a site. Anything else (--config, --version, ...) does not
+// make the CLI a site source, so the config file gets its turn in mergeConfig.
+const SITE_FLAGS = ['local', 'ssh', 'docker', 'host', 'user', 'root', 'container', 'container-filter', 'command', 'drush', 'uri'];
+
+export function configPathFromArgs(args: string[]): string | undefined {
+  const value = parseFlags(args).config;
+  return typeof value === 'string' ? value : undefined;
+}
+
+export function parseCliArgs(args: string[]): DrushMcpConfig | null {
+  const flags = parseFlags(args);
+  if (!SITE_FLAGS.some((key) => flags[key] !== undefined)) {
+    return null;
   }
 
   const transport = resolveTransportType(flags);

@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { parseCliArgs, resolveTransportType } from '../src/config.js';
+import { mkdtempSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { configPathFromArgs, loadConfigFile, mergeConfig, parseCliArgs, resolveTransportType } from '../src/config.js';
 
 describe('parseCliArgs', () => {
   it('parses --local --command into local transport config', () => {
@@ -35,5 +38,66 @@ describe('resolveTransportType', () => {
 
   it('returns ssh when host is specified without container', () => {
     expect(resolveTransportType({ host: 'x' })).toBe('ssh');
+  });
+});
+
+describe('parseCliArgs without site flags', () => {
+  it('returns null when no flag defines a site', () => {
+    expect(parseCliArgs([])).toBeNull();
+  });
+
+  it('returns null when only --config is given', () => {
+    expect(parseCliArgs(['--config', '/etc/drush-mcp.yml'])).toBeNull();
+  });
+});
+
+describe('configPathFromArgs', () => {
+  it('returns the --config value', () => {
+    expect(configPathFromArgs(['--local', '--config', '/etc/drush-mcp.yml'])).toBe('/etc/drush-mcp.yml');
+  });
+
+  it('returns undefined when --config is absent', () => {
+    expect(configPathFromArgs(['--local'])).toBeUndefined();
+  });
+});
+
+describe('loadConfigFile', () => {
+  it('loads sites with their names and file_upload block from an explicit path', () => {
+    const dir  = mkdtempSync(join(tmpdir(), 'drush-mcp-'));
+    const path = join(dir, 'drush-mcp.yml');
+    writeFileSync(path, [
+      'sites:',
+      '  atrium:',
+      '    transport: docker',
+      '    host: example.com',
+      '    file_upload:',
+      '      allowed_extensions: [html, pdf]',
+      '',
+    ].join('\n'));
+    const config = loadConfigFile(path);
+    expect(config?.sites.atrium.name).toBe('atrium');
+    expect(config?.sites.atrium.file_upload?.allowed_extensions).toEqual(['html', 'pdf']);
+  });
+});
+
+describe('mergeConfig', () => {
+  const fileConfig = {
+    sites: {
+      atrium: { name: 'atrium', transport: 'docker' as const, host: 'example.com', file_upload: { allowed_extensions: ['html'] } },
+      local:  { name: 'local',  transport: 'local'  as const, command: 'ddev drush' },
+    },
+    defaults: { timeout: 45 },
+  };
+
+  it('uses the config file sites when the CLI defines no site', () => {
+    const merged = mergeConfig(null, fileConfig, {});
+    expect(Object.keys(merged.sites)).toEqual(['atrium', 'local']);
+    expect(merged.sites.atrium.file_upload?.allowed_extensions).toEqual(['html']);
+  });
+
+  it('lets CLI flags win over the config file sites but keeps its defaults', () => {
+    const merged = mergeConfig(parseCliArgs(['--local', '--command', 'drush']), fileConfig, {});
+    expect(Object.keys(merged.sites)).toEqual(['default']);
+    expect(merged.defaults?.timeout).toBe(45);
   });
 });
