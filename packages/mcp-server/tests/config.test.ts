@@ -78,6 +78,23 @@ describe('loadConfigFile', () => {
     expect(config?.sites.atrium.name).toBe('atrium');
     expect(config?.sites.atrium.file_upload?.allowed_extensions).toEqual(['html', 'pdf']);
   });
+
+  it('loads a defaults.file_upload block', () => {
+    const dir  = mkdtempSync(join(tmpdir(), 'drush-mcp-'));
+    const path = join(dir, 'drush-mcp.yml');
+    writeFileSync(path, [
+      'sites:',
+      '  local:',
+      '    transport: local',
+      'defaults:',
+      '  timeout: 45',
+      '  file_upload:',
+      '    allowed_extensions: [md, html]',
+      '',
+    ].join('\n'));
+    const config = loadConfigFile(path);
+    expect(config?.defaults?.file_upload?.allowed_extensions).toEqual(['md', 'html']);
+  });
 });
 
 describe('mergeConfig', () => {
@@ -86,7 +103,7 @@ describe('mergeConfig', () => {
       atrium: { name: 'atrium', transport: 'docker' as const, host: 'example.com', file_upload: { allowed_extensions: ['html'] } },
       local:  { name: 'local',  transport: 'local'  as const, command: 'ddev drush' },
     },
-    defaults: { timeout: 45 },
+    defaults: { timeout: 45, file_upload: { allowed_extensions: ['md', 'html'] } },
   };
 
   it('uses the config file sites when the CLI defines no site', () => {
@@ -99,5 +116,8 @@ describe('mergeConfig', () => {
     const merged = mergeConfig(parseCliArgs(['--local', '--command', 'drush']), fileConfig, {});
     expect(Object.keys(merged.sites)).toEqual(['default']);
     expect(merged.defaults?.timeout).toBe(45);
+    // The site the flags built has no file_upload of its own, so defaults is
+    // the only route an upload policy has into a flag-configured server.
+    expect(merged.defaults?.file_upload?.allowed_extensions).toEqual(['md', 'html']);
   });
 });

@@ -59,3 +59,17 @@ sites:
 defaults:
   timeout: 30
   # drush: vendor/bin/drush
+
+  # The same file_upload block, for every site that does not set its own. This
+  # is the only route into a server started from CLI flags: flags discard the
+  # sites above and keep only these defaults.
+  #
+  # allowed_extensions replaces the built-in list, it does not extend it. The
+  # list gates the agent, not a person: drupal_file_attach already intersects
+  # with the target field's own file_extensions, and anyone with an account can
+  # upload against that same allowlist through the site's forms. Adding html or
+  # htm is a decision that the site serves uploads safely (a CSP sandbox header
+  # on file downloads, say); note svg is already in the built-in list and is the
+  # same class of document.
+  # file_upload:
+  #   allowed_extensions: [txt, md, pdf, png, jpg, jpeg, gif, svg, html, htm, log, sql, json, yaml, yml, zip, tar, gz]

@@ -1,4 +1,5 @@
-import type { DrushMcpConfig, SiteConfig } from './types.js';
+import type { DrushMcpConfig, FileUploadConfig, SiteConfig } from './types.js';
+import { resolveFileUploadConfig } from './types.js';
 import type { BaseTransport } from './transport/base.js';
 import { LocalTransport } from './transport/local.js';
 import { SshTransport } from './transport/ssh.js';
@@ -78,5 +79,16 @@ export class SiteManager {
     const site = this.sites.get(siteName);
     if (!site) throw new Error(`Site '${siteName}' not found.`);
     return site;
+  }
+
+  /**
+   * The upload policy in force for one site, defaults folded in.
+   *
+   * Lives here and not at the call site for the same reason `timeout` and
+   * `drush` do in getTransport(): this class is the only thing holding both a
+   * site and the config's `defaults`, and a fallback rule written twice drifts.
+   */
+  getFileUploadConfig(siteName: string): Required<FileUploadConfig> {
+    return resolveFileUploadConfig(this.getSite(siteName), this.config.defaults?.file_upload);
   }
 }

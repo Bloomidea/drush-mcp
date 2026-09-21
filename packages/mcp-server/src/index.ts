@@ -106,7 +106,7 @@ Config file:
   function createFileHandler<T>(builderFn: (input: T, fileConfig: ReturnType<typeof resolveFileUploadConfig>) => FileDrushArgs) {
     return async ({ site, ...input }: Record<string, unknown>) => {
       const siteConfig = siteManager.resolve(site as string | undefined);
-      const fileConfig = resolveFileUploadConfig(siteManager.getSite(siteConfig.name));
+      const fileConfig = siteManager.getFileUploadConfig(siteConfig.name);
 
       let built: FileDrushArgs;
       try {

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { SiteManager } from '../src/site-manager.js';
+import { FILE_UPLOAD_DEFAULTS } from '../src/types.js';
 
 describe('SiteManager', () => {
   it('returns the only site when no site param is given (single site)', () => {
@@ -62,5 +63,45 @@ describe('SiteManager', () => {
       },
     });
     expect(manager.getTransport('prod')).toBeDefined();
+  });
+});
+
+describe('SiteManager.getFileUploadConfig', () => {
+  const site = { name: 'atrium', transport: 'docker' as const, host: 'x.com', user: 'root', container: 'web' };
+
+  it('falls back to the built-in defaults when nothing is configured', () => {
+    const manager = new SiteManager({ sites: { atrium: site } });
+    expect(manager.getFileUploadConfig('atrium')).toEqual(FILE_UPLOAD_DEFAULTS);
+  });
+
+  // The case this exists for: CLI flags define the site, so mergeConfig throws
+  // the config file's sites away and `defaults` is the only place a per-machine
+  // upload policy can land.
+  it('applies defaults.file_upload to a site that declares none', () => {
+    const manager = new SiteManager({
+      sites: { atrium: site },
+      defaults: { file_upload: { allowed_extensions: ['md', 'html'] } },
+    });
+    const resolved = manager.getFileUploadConfig('atrium');
+    expect(resolved.allowed_extensions).toEqual(['md', 'html']);
+    // Untouched keys keep the built-in value.
+    expect(resolved.max_size).toBe(FILE_UPLOAD_DEFAULTS.max_size);
+  });
+
+  it('lets a site override the shared defaults key by key', () => {
+    const manager = new SiteManager({
+      sites: {
+        atrium: { ...site, file_upload: { max_size: 42 } },
+      },
+      defaults: { file_upload: { allowed_extensions: ['md', 'html'], max_size: 99 } },
+    });
+    const resolved = manager.getFileUploadConfig('atrium');
+    expect(resolved.max_size).toBe(42);
+    expect(resolved.allowed_extensions).toEqual(['md', 'html']);
+  });
+
+  it('throws for an unknown site, like every other lookup here', () => {
+    const manager = new SiteManager({ sites: { atrium: site } });
+    expect(() => manager.getFileUploadConfig('nope')).toThrow(/not found/);
   });
 });

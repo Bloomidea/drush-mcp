@@ -33,8 +33,25 @@ export const FILE_UPLOAD_DEFAULTS: Required<FileUploadConfig> = {
   destination_prefix: 'mcp-uploads',
 };
 
-export function resolveFileUploadConfig(site: SiteConfig): Required<FileUploadConfig> {
-  return { ...FILE_UPLOAD_DEFAULTS, ...(site.file_upload ?? {}) };
+/**
+ * Resolves the upload policy for one site.
+ *
+ * Three layers, each overriding the one before it key by key: the built-in
+ * FILE_UPLOAD_DEFAULTS, then the config file's `defaults.file_upload`, then the
+ * site's own block. The middle layer is what a server started from CLI flags
+ * gets, because mergeConfig() keeps only `defaults` from the config file in
+ * that case: a site built out of flags has no `file_upload` of its own and no
+ * way to grow one.
+ *
+ * `allowed_extensions` replaces, it does not extend. Widening the list is a
+ * decision about what an agent may write to a site, and an accidental union
+ * with the built-in list is not that decision.
+ */
+export function resolveFileUploadConfig(
+  site: SiteConfig,
+  defaults?: FileUploadConfig,
+): Required<FileUploadConfig> {
+  return { ...FILE_UPLOAD_DEFAULTS, ...(defaults ?? {}), ...(site.file_upload ?? {}) };
 }
 
 export interface DrushMcpConfig {
@@ -42,6 +59,7 @@ export interface DrushMcpConfig {
   defaults?: {
     timeout?: number;
     drush?: string;
+    file_upload?: FileUploadConfig;
   };
 }
 

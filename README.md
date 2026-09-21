@@ -126,7 +126,7 @@ sites:
 
 The main difference is that drush-mcp requires an explicit `transport` field and supports additional options like `containerFilter` for dynamic Docker container lookup.
 
-### File upload settings (per-site)
+### File upload settings
 
 Uploads land in the scheme the site expects: `drupal_file_attach` uses the target field's `uri_scheme` and `drupal_file_upload` uses `system.file` `default_scheme`. Pass `scheme` only to override.
 
@@ -146,6 +146,34 @@ sites:
       default_uid: 0                    # 0 = anonymous; set to a real user ID for attribution
       destination_prefix: mcp-uploads   # files land in <scheme>://<prefix>/<UTC YYYY-MM>/
 ```
+
+The same block is accepted under `defaults`, applying to every site that does
+not set its own. That is the only route into a server started from CLI flags:
+when flags define the site, the config file's `sites` are discarded and only
+its `defaults` survive, so a flag-configured server has no `file_upload` of its
+own and no way to grow one.
+
+```yaml
+defaults:
+  timeout: 30
+  file_upload:
+    allowed_extensions: [txt, md, pdf, png, jpg, jpeg, gif, svg, html, htm, log, sql, json, yaml, yml, zip, tar, gz]
+```
+
+Resolution is three layers deep, each overriding the one before it key by key:
+the built-in defaults, then `defaults.file_upload`, then the site's own block.
+`allowed_extensions` **replaces** the list rather than extending it, at every
+layer.
+
+Before adding `html`, `htm` or anything else a browser executes, know what the
+list is and is not. It gates the agent, not a person: `drupal_file_attach`
+already intersects with the target field's own `file_extensions`, and anyone
+with an account can upload against that same field allowlist through the site's
+own forms. What the list buys is that an agent talked into it by a poisoned
+comment cannot write active content, which matters until the site serves
+uploads with something like `Content-Security-Policy: sandbox allow-scripts`.
+Note that `svg` ships in the built-in list and is the same class of document as
+`html`.
 
 Without a `uri` configured for the site, the tool still works but `url` in the response is `null` (drush in CLI mode without `--uri` cannot build a routable public URL).
 
