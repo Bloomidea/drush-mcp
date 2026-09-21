@@ -71,7 +71,15 @@ export function loadConfigFile(path?: string): DrushMcpConfig | null {
   for (const candidate of candidates) {
     if (existsSync(candidate)) {
       const raw = readFileSync(candidate, 'utf-8');
-      const parsed = parseYaml(raw) as DrushMcpConfig;
+      const parsed = parseYaml(raw) as DrushMcpConfig | null;
+      // An empty file parses to null, and a file carrying only `defaults:` has
+      // no `sites` key at all — the normal shape once the sites come from CLI
+      // flags. Object.entries(undefined) throws, which would take the server
+      // down at startup over a config that is perfectly valid.
+      if (!parsed) {
+        return null;
+      }
+      parsed.sites ??= {};
       for (const [name, site] of Object.entries(parsed.sites)) {
         site.name = name;
       }
@@ -111,7 +119,11 @@ export function mergeConfig(
     };
   }
 
-  if (fileConfig) return fileConfig;
+  // Only a file that actually names a site settles the question. A file
+  // carrying just `defaults:` is the shape that pairs with CLI flags or
+  // environment variables, and returning it here would shadow both with an
+  // empty site list.
+  if (fileConfig && Object.keys(fileConfig.sites).length > 0) return fileConfig;
 
   if (envConfig.host || envConfig.transport) {
     const transport = resolveTransportType(envConfig);
@@ -119,6 +131,7 @@ export function mergeConfig(
       sites: {
         default: { name: 'default', transport, ...envConfig } as SiteConfig,
       },
+      defaults: fileConfig?.defaults,
     };
   }
 

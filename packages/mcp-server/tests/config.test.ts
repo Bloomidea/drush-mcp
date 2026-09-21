@@ -95,6 +95,29 @@ describe('loadConfigFile', () => {
     const config = loadConfigFile(path);
     expect(config?.defaults?.file_upload?.allowed_extensions).toEqual(['md', 'html']);
   });
+
+  // A file that only carries defaults is the normal shape once the sites come
+  // from CLI flags, and Object.entries(undefined) throws.
+  it('loads a file that has defaults and no sites at all', () => {
+    const dir  = mkdtempSync(join(tmpdir(), 'drush-mcp-'));
+    const path = join(dir, 'drush-mcp.yml');
+    writeFileSync(path, [
+      'defaults:',
+      '  file_upload:',
+      '    allowed_extensions: [md, html]',
+      '',
+    ].join('\n'));
+    const config = loadConfigFile(path);
+    expect(config?.defaults?.file_upload?.allowed_extensions).toEqual(['md', 'html']);
+    expect(config?.sites).toEqual({});
+  });
+
+  it('returns null for an empty file rather than throwing', () => {
+    const dir  = mkdtempSync(join(tmpdir(), 'drush-mcp-'));
+    const path = join(dir, 'drush-mcp.yml');
+    writeFileSync(path, '');
+    expect(loadConfigFile(path)).toBeNull();
+  });
 });
 
 describe('mergeConfig', () => {
@@ -110,6 +133,21 @@ describe('mergeConfig', () => {
     const merged = mergeConfig(null, fileConfig, {});
     expect(Object.keys(merged.sites)).toEqual(['atrium', 'local']);
     expect(merged.sites.atrium.file_upload?.allowed_extensions).toEqual(['html']);
+  });
+
+  // A defaults-only file is the shape the README now recommends alongside CLI
+  // flags. It must not shadow the environment-variable fallback for someone
+  // who configures the site that way.
+  it('falls through to env vars when the file carries defaults but no sites', () => {
+    const defaultsOnly = { sites: {}, defaults: { file_upload: { allowed_extensions: ['md', 'html'] } } };
+    const merged = mergeConfig(null, defaultsOnly, { host: 'example.com', transport: 'ssh' as const });
+    expect(merged.sites.default.host).toBe('example.com');
+    expect(merged.defaults?.file_upload?.allowed_extensions).toEqual(['md', 'html']);
+  });
+
+  it('still reports no configuration when a defaults-only file is all there is', () => {
+    const defaultsOnly = { sites: {}, defaults: { timeout: 45 } };
+    expect(() => mergeConfig(null, defaultsOnly, {})).toThrow(/No site configuration found/);
   });
 
   it('lets CLI flags win over the config file sites but keeps its defaults', () => {
