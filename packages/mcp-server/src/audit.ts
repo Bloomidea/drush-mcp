@@ -37,8 +37,9 @@ const HEAD       = 200;
 const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex');
 
 // Names that hold a credential wherever they appear, as a whole word of a
-// snake_case or dotted name: `pass`, `field_api_key`, `smtp.password`.
-const SECRET_NAME = /(^|[_.])(pass|passwd|password|secret|token|api_?key|credentials?)($|[_.])/i;
+// snake_case, dotted or dashed name: `pass`, `field_api_key`,
+// `smtp.password`, `--db-password`.
+const SECRET_NAME = /(^|[_.-])(pass|passwd|password|secret|token|api_?key|credentials?)($|[_.-])/i;
 
 const REDACTED = '[redacted]';
 
@@ -67,19 +68,45 @@ export function summarizeArgs(value: unknown, key = ''): unknown {
   return value;
 }
 
+/** `--name=value` with a credential-shaped name keeps the name only. */
+function redactOption(arg: unknown): unknown {
+  if (typeof arg !== 'string') return arg;
+  const option = /^(--?[^=]+)=/.exec(arg);
+  return option && SECRET_NAME.test(option[1].replace(/^-+/, '')) ? `${option[1]}=${REDACTED}` : arg;
+}
+
 /**
- * summarizeArgs, plus the two calls whose secret sits in a value with an
- * innocent name: `drupal_config_set` on a credential key, and Drush's
- * `user:password` through `drupal_drush`. Code and SQL are logged as given;
- * nothing can tell a secret inside them apart.
+ * summarizeArgs, plus the calls whose secret sits where its name does not
+ * show: `fields` sent as a JSON string, a `drupal_config_set` on a credential
+ * key, and through `drupal_drush` a credential option (`--password=x`), the
+ * value of a `config:set` on a credential key and the password of
+ * `user:password`. Code and SQL are logged as given; nothing can tell a
+ * secret inside them apart.
  */
 export function summarizeCall(tool: string, input: Record<string, unknown>): unknown {
-  const args = summarizeArgs(input) as Record<string, unknown>;
+  // The server parses these the same way before it runs the call, so the log
+  // sees the keys the bridge will see.
+  const parsed: Record<string, unknown> = { ...input };
+  for (const key of ['fields', 'filters']) {
+    if (typeof parsed[key] === 'string') {
+      try { parsed[key] = JSON.parse(parsed[key] as string); } catch { /* logged as given */ }
+    }
+  }
+  const args = summarizeArgs(parsed) as Record<string, unknown>;
+
   if (tool === 'drupal_config_set' && typeof input.key === 'string' && SECRET_NAME.test(input.key)) {
     args.value = REDACTED;
   }
-  if (tool === 'drupal_drush' && ['user:password', 'user-password', 'upwd'].includes(String(input.command)) && Array.isArray(args.arguments)) {
-    args.arguments = args.arguments.map((arg, i) => (i === 0 ? arg : REDACTED));
+  if (tool === 'drupal_drush' && Array.isArray(args.arguments)) {
+    const command   = String(input.command);
+    let   arguments_ = args.arguments.map(redactOption);
+    if (['user:password', 'user-password', 'upwd'].includes(command)) {
+      arguments_ = arguments_.map((arg, i) => (i === 0 ? arg : REDACTED));
+    }
+    if (['config:set', 'cset', 'config-set'].includes(command) && typeof arguments_[1] === 'string' && SECRET_NAME.test(arguments_[1])) {
+      arguments_ = arguments_.map((arg, i) => (i === 2 ? REDACTED : arg));
+    }
+    args.arguments = arguments_;
   }
   return args;
 }

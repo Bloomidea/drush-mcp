@@ -11,6 +11,7 @@ use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeBundleInfoInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Session\AccountInterface;
@@ -917,9 +918,9 @@ final class McpBridgeDrushCommands extends DrushCommands {
    *
    * A condition on a field answers questions about it even when the field is
    * never returned: filtering users on `mail` tells whose address it is. So a
-   * path must start with a field the account may view, and must not follow a
-   * reference into another entity (`uid.entity.mail`), whose fields would
-   * each need their own check.
+   * path must start with a field the account may view, and must stay inside
+   * that field (see isColumnPath()): a reference into another entity would
+   * need a check for every field along the way.
    *
    * @param string[] $paths
    *   Field names, optionally with a property (`body.value`).
@@ -945,11 +946,29 @@ final class McpBridgeDrushCommands extends DrushCommands {
       if ($definition === NULL && $bundle === NULL && !empty($map[$name]['bundles'])) {
         $definition = $this->entityFieldManager->getFieldDefinitions($entityTypeId, reset($map[$name]['bundles']))[$name] ?? NULL;
       }
-      if ($definition === NULL || in_array('entity', $parts, TRUE) || !$handler->fieldAccess('view', $definition)) {
+      if ($definition === NULL || !$this->isColumnPath($definition, array_slice($parts, 1)) || !$handler->fieldAccess('view', $definition)) {
         $denied[] = (string) $path;
       }
     }
     return $denied;
+  }
+
+  /**
+   * Whether what follows a field name stays inside that field.
+   *
+   * Allowed: nothing, a stored column (`body.value`), or a delta and a column
+   * (`field_tags.0.target_id`). Entity query reads anything else as a
+   * relationship, under more spellings than one can list (`uid.entity.mail`,
+   * `uid.entity:user.mail`), so this is an allowlist.
+   *
+   * @param string[] $rest
+   *   The path segments after the field name.
+   */
+  private function isColumnPath(FieldDefinitionInterface $definition, array $rest): bool {
+    if (count($rest) === 2 && ctype_digit($rest[0])) {
+      $rest = [$rest[1]];
+    }
+    return $rest === [] || (count($rest) === 1 && array_key_exists($rest[0], $definition->getFieldStorageDefinition()->getColumns()));
   }
 
   /**

@@ -70,6 +70,11 @@ expect 'plain may filter and sort on visible fields' '.items | type == "array"' 
 expect 'plain cannot filter users on mail'        '.error == "access_denied" and .fields == ["mail"]' mcp:entity-list --type=user --filters='{"mail":"editor@example.com"}' --user="$PLAIN"
 expect 'plain cannot sort users on mail'          '.error == "access_denied"'        mcp:entity-list --type=user --sort=mail --user="$PLAIN"
 expect 'no filter may follow a reference'         '.error == "access_denied"'        mcp:entity-list --type=node --filters='{"uid.entity.mail":"admin@example.com"}' --user=1
+expect 'nor through an entity:type specifier'     '.error == "access_denied"'        mcp:entity-list --type=node --filters='{"uid.entity:user.mail":"admin@example.com"}' --user=1
+expect 'nor sort through one'                     '.error == "access_denied"'        mcp:entity-list --type=node --sort=uid.entity:user.mail --user=1
+expect 'a column of the field is fine'            '.items | type == "array"'         mcp:entity-list --type=node --filters='{"uid.target_id":1}' --user="$PLAIN"
+expect 'a delta and a column are fine'            '.items | type == "array"'         mcp:entity-list --type=node --filters='{"uid.0.target_id":1}' --user="$PLAIN"
+expect 'a property that is not a column is not'   '.error == "access_denied"'        mcp:entity-list --type=node --filters='{"uid.entity":1}' --user=1
 expect 'admin may filter users on mail'           '.items | length == 1'             mcp:entity-list --type=user --filters='{"mail":"editor@example.com"}' --user=1
 
 echo '# attach'

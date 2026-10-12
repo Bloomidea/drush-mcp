@@ -51,6 +51,21 @@ describe('summarizeCall', () => {
     expect(summarizeCall('drupal_drush', { command: 'user:password', arguments: ['admin', 'hunter2'] }))
       .toEqual({ command: 'user:password', arguments: ['admin', '[redacted]'] });
   });
+
+  it('redacts credential options and config:set values passed through drupal_drush', () => {
+    expect(summarizeCall('drupal_drush', { command: 'user:create', arguments: ['bob', '--password=hunter2', '--mail=b@x.pt'] }))
+      .toEqual({ command: 'user:create', arguments: ['bob', '--password=[redacted]', '--mail=b@x.pt'] });
+    expect(summarizeCall('drupal_drush', { command: 'sql:cli', arguments: ['--db-password=hunter2'] }))
+      .toEqual({ command: 'sql:cli', arguments: ['--db-password=[redacted]'] });
+    expect(summarizeCall('drupal_drush', { command: 'config:set', arguments: ['smtp.settings', 'smtp_password', 'hunter2', '-y'] }))
+      .toEqual({ command: 'config:set', arguments: ['smtp.settings', 'smtp_password', '[redacted]', '-y'] });
+  });
+
+  it('finds secrets inside fields sent as a JSON string', () => {
+    const out = summarizeCall('drupal_entity_create', { entity_type: 'user', fields: '{"name":"bob","pass":"hunter2"}' });
+    expect(JSON.stringify(out)).not.toContain('hunter2');
+    expect(out).toEqual({ entity_type: 'user', fields: { name: 'bob', pass: '[redacted]' } });
+  });
 });
 
 describe('AuditLog', () => {
