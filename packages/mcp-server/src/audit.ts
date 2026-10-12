@@ -22,6 +22,8 @@ export interface AuditEntry {
   time:        string;
   site:        string | null;
   tool:        string;
+  /** The Drupal account a bridge command acted as (0 = anonymous). */
+  as?:         number;
   args:        unknown;
   outcome:     AuditOutcome;
   error?:      string;
@@ -134,8 +136,10 @@ export class AuditLog {
 
   /**
    * Opens the log for appending, creating its directory. `false` turns it
-   * off. Fails loudly, at startup, when the file cannot be opened: a server
-   * that was asked to keep a log does not run without one.
+   * off. A path the operator set fails loudly, at startup, when it cannot be
+   * opened: a server asked to keep a log does not run without one. The
+   * default path only warns, so a container whose home is read-only still
+   * starts.
    */
   static open(setting: string | false | undefined): AuditLog | null {
     if (setting === false) {
@@ -148,13 +152,24 @@ export class AuditLog {
     if (!isAbsolute(path)) {
       throw new Error(`defaults.audit_log must be an absolute path or start with ~/, got ${JSON.stringify(setting)}.`);
     }
-    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    return new AuditLog(openSync(path, 'a', 0o600), path);
+    try {
+      mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+      return new AuditLog(openSync(path, 'a', 0o600), path);
+    }
+    catch (err) {
+      if (setting !== undefined) {
+        throw err;
+      }
+      process.stderr.write(`drush-mcp: no audit log, ${path} cannot be opened (${(err as Error).message}). Set defaults.audit_log to a writable path, or to false.\n`);
+      return null;
+    }
   }
 
   record(entry: AuditEntry): void {
     try {
-      writeSync(this.fd, JSON.stringify(entry) + '\n');
+      // JSON.stringify leaves U+2028 and U+2029 raw, and readers that split
+      // on every line terminator would cut an entry in two.
+      writeSync(this.fd, JSON.stringify(entry).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029') + '\n');
     }
     catch (err) {
       // The call has already run; refusing its result now would not undo it.

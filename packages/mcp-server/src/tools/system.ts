@@ -10,8 +10,17 @@ export function buildWatchdogArgs(input: { count?: number; severity?: string } =
   if (input.severity) args.push(`--severity=${input.severity}`);
   return { command: 'watchdog:show', args, jsonFormat: true };
 }
+// Every core:status field except db-username and db-password, which the JSON
+// format otherwise returns in full. Each name has to be one Drush defines, or
+// the command fails; a field with no value is just left out.
+const STATUS_FIELDS = [
+  'drupal-version', 'uri', 'db-driver', 'db-hostname', 'db-port', 'db-name', 'db-status', 'bootstrap',
+  'theme', 'admin-theme', 'php-version', 'php-os', 'drush-version', 'install-profile', 'root', 'site',
+  'files', 'private', 'temp',
+];
+
 export function buildStatusArgs(): DrushArgs {
-  return { command: 'core:status', args: [], jsonFormat: true };
+  return { command: 'core:status', args: [`--fields=${STATUS_FIELDS.join(',')}`], jsonFormat: true };
 }
 export function buildConfigGetArgs(input: { name: string; key?: string }): DrushArgs {
   const args = [positional(input.name, 'name')];

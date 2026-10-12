@@ -1,5 +1,13 @@
-import { afterAll, beforeAll, describe, it, expect } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'fs';
+import { afterAll, beforeAll, describe, it, expect, vi } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
+
+// homedir() as libuv computes it ignores process.env.HOME set inside a vitest
+// worker thread, so the default-path test swaps the function instead.
+const fakeHome = vi.hoisted(() => ({ value: undefined as string | undefined }));
+vi.mock('os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('os')>();
+  return { ...actual, homedir: () => fakeHome.value ?? actual.homedir() };
+});
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { AuditLog, summarizeArgs, summarizeCall } from '../src/audit.js';
@@ -117,6 +125,30 @@ describe('AuditLog', () => {
       log.close();
     }
     expect(readFileSync(path, 'utf-8').trim().split('\n')).toHaveLength(2);
+  });
+
+  it('escapes U+2028 and U+2029, so no reader splits an entry in two', () => {
+    const path = join(dir, 'separators.jsonl');
+    const log  = AuditLog.open(path)!;
+    const odd  = `node${String.fromCharCode(0x2028)}x${String.fromCharCode(0x2029)}y`;
+    log.record({ time: 't', site: null, tool: 'drupal_entity_read', args: { entity_type: odd }, outcome: 'ok', exit_code: 0, duration_ms: 0 });
+    log.close();
+    const raw = readFileSync(path, 'utf-8');
+    expect(raw.split(/\r\n|\n|\r|\u2028|\u2029/).filter(Boolean)).toHaveLength(1);
+    expect(JSON.parse(raw).args.entity_type).toBe(odd);
+  });
+
+  it('only warns when the default log cannot be opened, but fails for a path the operator set', () => {
+    // A home that is a file: the default directory cannot be created in it.
+    writeFileSync(join(dir, 'home-is-a-file'), '');
+    fakeHome.value = join(dir, 'home-is-a-file');
+    try {
+      expect(AuditLog.open(undefined)).toBeNull();
+      expect(() => AuditLog.open(join(dir, 'home-is-a-file', 'audit.jsonl'))).toThrow();
+    }
+    finally {
+      fakeHome.value = undefined;
+    }
   });
 
   it('refuses a relative path or a value that is not a path', () => {

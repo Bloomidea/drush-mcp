@@ -25,7 +25,7 @@ MCP server for Drupal via Drush. Connects to any Drupal 10+/11+ site over local 
 
 - **Introspect before creating:** Always call `drupal_introspect` with `entity_type` and `bundle` before creating or updating entities. This returns required fields, field types, allowed values for taxonomy references, and list field options. Never guess field values.
 - **Use the `user` parameter:** Bridge tools (`drupal_entity_create`, `drupal_entity_read`, `drupal_entity_update`, `drupal_entity_list`, `drupal_introspect`, and `uid` on the file tools) act as one Drupal account and apply its access checks: entity create, view and update access, field view access on what comes back, and edit access on every field whose value changes. Pass `user` to act as a given account. Without it the site's `run_as` applies, and without that, anonymous; before 0.6.0 the fallback was uid 1, so a call that used to work without `user` may now answer `access_denied`. Pass the account whose permissions the work should have, not uid 1.
-- **Read refusals as answers, not glitches:** `access_denied` means Drupal refused the acting account (the message carries Drupal's reason). `user_not_allowed` means the site runs on the `read-only` or `content` tools profile and pins the account to its `run_as`; `tool_disabled` means the site switched that tool off. Report these to the user; do not retry as another account or route around them with `drupal_php_eval`.
+- **Read refusals as answers, not glitches:** `access_denied` means Drupal refused the acting account (the message carries Drupal's reason). `user_not_allowed` means the site runs on the `read-only` or `content` tools profile and pins the account to its `run_as`; `tool_disabled` means the site switched that tool off; `param_not_allowed` means a restricted site does not let the agent choose a file's `scheme` or `destination` (drop them, the field decides); `bridge_too_old` means the site's bridge must be upgraded before a restricted profile can run. Report these to the user; do not retry as another account or route around them with `drupal_php_eval`.
 - **Confirm before destructive operations:** `drupal_entity_delete`, `drupal_config_set`, `drupal_php_eval`, and `drupal_sql_query` modify data. Always confirm with the user before executing.
 - **Multi-site:** When multiple Drupal sites are configured, every tool accepts a `site` parameter. With a single site, it resolves automatically.
 - **Drush site aliases:** If the project has a `drush/sites/self.site.yml` file, its entries (`host`, `user`, `root`, `uri`) map directly to `drush-mcp.yml` site config. Useful for discovering connection details when setting up new sites.
@@ -55,7 +55,7 @@ These use the drush-bridge package (`bloomidea/drush-mcp-bridge`) installed on t
 |------|-------------|
 | `drupal_cache_rebuild` | Clear all caches |
 | `drupal_watchdog` | View recent log entries (supports `count`, `severity` filters) |
-| `drupal_status` | Site info: Drupal version, DB, PHP, paths |
+| `drupal_status` | Site info: Drupal version, DB (never its username or password), PHP, paths |
 | `drupal_config_get` | Read a configuration value (e.g., `system.site`) |
 | `drupal_config_set` | Write a configuration value |
 | `drupal_field_info` | Field definitions for an entity type |
@@ -280,6 +280,7 @@ Default `mode` is `append` (adds to the existing list, respecting cardinality). 
 | `INVALID_SCHEME` / `INVALID_DESTINATION` | Bad scheme or path traversal attempt on the *destination* (inside Drupal) |
 | `ENTITY_NOT_FOUND` / `FIELD_INVALID` | Target entity doesn't exist or field isn't a `file`/`image` type |
 | `ACCESS_DENIED` | The acting account (`uid`, else the site's `run_as`, else anonymous) may not update the target entity or edit the field |
+| `INVALID_DESTINATION` | Also: the destination starts with `styles/`, `css/`, `js/` or `php/`, which Drupal generates itself |
 | `CARDINALITY_EXCEEDED` | `mode=append` against a full single-cardinality field — use `mode=replace` |
 
 **URL in response:** `url` is `null` for `private`/`temporary` schemes, and also `null` when the site has no `uri` configured in `drush-mcp.yml` (because drush running in CLI without `--uri` can't build a real public URL). The `uri` field (e.g. `public://mcp-uploads/2026-05/foo.md`) is always populated and is what you should pass back to other Drupal calls.

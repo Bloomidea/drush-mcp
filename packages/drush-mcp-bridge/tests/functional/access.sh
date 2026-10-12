@@ -63,7 +63,11 @@ expect 'a create cannot carry the id of an existing node' '.error == "access_den
 expect 'a create cannot carry a name that is not a field' '.error == "access_denied" and .fields == ["not_a_field"]' mcp:entity-create --type=node --bundle=article --fields='{"title":"x","not_a_field":1}' --user="$EDITOR"
 expect 'an update cannot change a read-only key'  '.error == "access_denied" and .fields == ["uuid"]' mcp:entity-update --type=node --id="$PUBLISHED" --fields='{"uuid":"00000000-0000-0000-0000-000000000000"}' --user="$EDITOR"
 
+expect 'editor sets the alias of its own node'    '.status == "updated"'             mcp:entity-update --type=node --id="$PUBLISHED" --fields="{\"path\":{\"alias\":\"/review-$PUBLISHED\"}}" --user="$EDITOR"
+expect 'nobody may point path.pid at another alias' '.error == "access_denied" and .fields == ["path.pid"]' mcp:entity-update --type=node --id="$PUBLISHED" --fields='{"path":{"alias":"/hijack","pid":999999}}' --user=1
+
 echo '# list'
+expect 'paging does not reveal where an unpublished node sorts' '.items | length == 1' mcp:entity-list --type=node --filters='{"uid":1}' --sort=title:DESC --limit=1 --user="$PLAIN"
 expect 'plain does not see the unpublished node'  "[.items[].id] | index(\"$UNPUBLISHED\") == null" mcp:entity-list --type=node --user="$PLAIN"
 expect 'admin sees the unpublished node'          "[.items[].id] | index(\"$UNPUBLISHED\") != null" mcp:entity-list --type=node --user=1
 expect 'plain may filter and sort on visible fields' '.items | type == "array"'      mcp:entity-list --type=node --filters='{"status":1}' --sort=created:DESC --user="$PLAIN"
@@ -89,6 +93,11 @@ check 'plain cannot attach to a node it cannot edit'               '.error == "A
 check 'anonymous cannot attach'                                    '.error == "ACCESS_DENIED"'            "$(attach)"
 check 'editor attaches, acting through --user'                     ".attached_to.entity_id == $PUBLISHED" "$(attach --uid="$EDITOR" --user="$EDITOR")"
 check 'a 0.5.x server sending only --uid still acts as that owner' ".attached_to.entity_id == $PUBLISHED" "$(attach --uid="$EDITOR" --mode=replace)"
+check 'no file may land under styles/, which Drupal serves as derivatives' '.error == "INVALID_DESTINATION"' \
+  "$("$PROJECT/vendor/bin/drush" --root="$PROJECT/web" mcp:file-attach --filename=pixel.png --destination=./styles/thumbnail/public --mode=replace --size="$SIZE" --entity-type=node --entity-id="$PUBLISHED" --field-name=field_image --uid="$EDITOR" < "$PNG" 2>&1)"
+
+echo '# bridge info'
+expect 'the bridge reports access checks'         '.capabilities | index("access-checks") != null' mcp:bridge-info
 rm -f "$PNG"
 
 echo

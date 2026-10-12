@@ -16,7 +16,11 @@ access checks and the server's `run_as` meet in the middle.
 - **Tool profiles.** `tools: { profile, allow, deny }` per site or under
   `defaults`, and `--profile` on the command line. `read-only` and `content`
   expose only the bridge commands, which go through Drupal's access checks,
-  plus `drupal_status` and `drupal_field_info`; `full` exposes all 19.
+  plus `drupal_status` and `drupal_field_info`; `full` exposes all 19. On
+  the restricted profiles the server refuses a bridge without access checks
+  (`bridge_too_old`, checked once per site through the new
+  `mcp:bridge-info`), and `drupal_file_attach` refuses `scheme` and
+  `destination`.
 - **`run_as`**, per site or under `defaults`, and `--run-as` on the command
   line: the Drupal account bridge commands act as when the agent names none.
   On `read-only` and `content` the agent may not name any other account.
@@ -38,19 +42,33 @@ access checks and the server's `run_as` meet in the middle.
   every field whose value changes (a value equal to what the entity would get
   anyway needs none, as in core's REST), and update access on the entity a
   file is attached to. `drupal_entity_list` drops entities the account may
-  not view, and refuses a filter or sort on a field the account may not view
-  or one that follows a reference (`uid.entity.mail`). There is no switch to
-  turn this off; an account with the right permissions, or uid 1 as
-  `run_as`, gets the old results.
-- **`fields` may not carry read-only fields or names that are not fields.**
-  An entity key (`nid`, `uuid`, `vid`, the bundle) is refused unless it
-  equals the current value, so a create can no longer name an existing id and
-  save over that entity. An unknown name used to be ignored silently.
+  not view, leaves unpublished nodes out of the query itself so paging does
+  not show where they sort, and refuses a filter or sort on a field the
+  account may not view or on anything past the field's own columns
+  (`uid.entity.mail`). There is no switch to turn this off; an account with
+  the right permissions, or uid 1 as `run_as`, gets the old results.
+- **`fields` may not carry entity keys or names that are not fields.** An
+  entity key (`nid`, `uuid`, `vid`, the bundle) is refused unless it equals
+  the current value, so a create can no longer name an existing id and save
+  over that entity; `path.pid` may only be the entity's own alias. An
+  unknown name used to be ignored silently. Computed fields such as `path`
+  and `moderation_state` are set as before.
+- **Entity tools always send `--user`**, `0` for anonymous, so a 0.5 bridge
+  behind a 0.6 server no longer falls back to uid 1.
+- **`drupal_status` no longer returns `db-username` and `db-password`**, on
+  any profile; it asks Drush for an explicit field list. Use `drupal_drush`
+  with `core:status` for the rest.
+- **No upload may land under `styles/`, `css/`, `js/` or `php/`**, which
+  Drupal generates and serves itself; a file planted under `styles/` was
+  served as the derivative of another image.
 - **The audit log is on.** Turn it off with `defaults.audit_log: false`.
-  Credential-shaped names (`password`, `secret`, `token`, `api_key`, at any
-  depth) are redacted, as are the value of a `drupal_config_set` on such a
-  key and the password of `drush user:password`. PHP code and SQL are logged
-  as given.
+  Each line records the account a bridge command acted as. Credential-shaped
+  names (`password`, `secret`, `token`, `api_key`, at any depth, also inside
+  `fields` sent as a JSON string), credential options of `drupal_drush`
+  (`--password=x` or `--password x`), the value of a `config:set` on a
+  credential key, the password of `user:password` and passwords inside URLs
+  are redacted. PHP code and SQL are logged as given. If the default path
+  cannot be opened the server starts without a log and warns on stderr.
 - The file commands take `--user`, the acting account, apart from `--uid`,
   the owner. Without `--user` the bridge acts as the owner, as before, and as
   anonymous instead of uid 1 when there is no owner. The server sends

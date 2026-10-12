@@ -41,10 +41,12 @@ export function createServer(config: DrushMcpConfig, version: string): McpServer
 
   /** A finished call: what the agent gets back, and what the audit log keeps. */
   interface Outcome {
-    result:   ToolResult;
-    exitCode: number | null;
-    error?:   string;
-    refused?: boolean;
+    result:    ToolResult;
+    exitCode:  number | null;
+    error?:    string;
+    refused?:  boolean;
+    /** The Drupal account a bridge command acted as; raw Drush has none. */
+    actingAs?: number;
   }
 
   /** A call this server turns away by policy, before anything runs. */
@@ -106,6 +108,32 @@ export function createServer(config: DrushMcpConfig, version: string): McpServer
     return requested as number;
   }
 
+  // Sites whose bridge has confirmed it applies Drupal's access checks. Only
+  // successes are kept, so a failed lookup (a dropped ssh connection) is
+  // retried on the next call instead of refusing the site until restart.
+  const bridgeChecked = new Set<string>();
+
+  /**
+   * On the restricted profiles, refuses to run a bridge command against a
+   * bridge that predates access checks: a 0.5 bridge runs every call with no
+   * checks at all, which would leave the profile's boundary empty.
+   */
+  async function requireAccessChecks(siteName: string): Promise<void> {
+    if (policies.get(siteName)!.profile === 'full' || bridgeChecked.has(siteName)) {
+      return;
+    }
+    const result = await siteManager.getTransport(siteName).execute('mcp:bridge-info', []);
+    let capabilities: unknown = [];
+    try {
+      capabilities = JSON.parse(result.stdout).capabilities;
+    }
+    catch { /* an older bridge has no such command */ }
+    if (result.exitCode !== 0 || !Array.isArray(capabilities) || !capabilities.includes('access-checks')) {
+      throw new Refusal('bridge_too_old', `Site '${siteName}' uses the ${policies.get(siteName)!.profile} tools profile, but its drush-mcp-bridge does not apply Drupal access checks. Upgrade bloomidea/drush-mcp-bridge to 0.6 or later.`);
+    }
+    bridgeChecked.add(siteName);
+  }
+
   type Runner = (site: SiteConfig, input: Record<string, unknown>) => Promise<Outcome>;
 
   /**
@@ -140,6 +168,7 @@ export function createServer(config: DrushMcpConfig, version: string): McpServer
         time:        new Date(started).toISOString(),
         site:        siteName,
         tool:        name,
+        ...(outcome.actingAs !== undefined ? { as: outcome.actingAs } : {}),
         args:        loggable,
         outcome:     outcome.refused ? 'refused' : outcome.error ? 'error' : 'ok',
         ...(outcome.error ? { error: outcome.error } : {}),
@@ -158,13 +187,18 @@ export function createServer(config: DrushMcpConfig, version: string): McpServer
           try { input[key] = JSON.parse(input[key] as string); } catch { /* leave as-is */ }
         }
       }
+      let actingAs: number | undefined;
       if (options.actsAs) {
-        input = { ...input, user: actingUser(siteConfig.name, input.user, 'user') };
+        // Always sent, 0 for anonymous: a 0.5 bridge falls back to uid 1
+        // when --user is missing.
+        actingAs = actingUser(siteConfig.name, input.user, 'user') ?? 0;
+        input    = { ...input, user: actingAs };
+        await requireAccessChecks(siteConfig.name);
       }
       const transport   = siteManager.getTransport(siteConfig.name);
       const { command, args, jsonFormat } = builderFn(input);
       const drushArgs   = jsonFormat ? [...args, '--format=json'] : args;
-      return outcomeOf(await transport.execute(command, drushArgs), command, siteConfig.name);
+      return { ...outcomeOf(await transport.execute(command, drushArgs), command, siteConfig.name), actingAs };
     };
   }
 
@@ -176,6 +210,14 @@ export function createServer(config: DrushMcpConfig, version: string): McpServer
       // operator set as default_uid for attribution: that would let a
       // default_uid of 1 run every unattributed attach as the administrator.
       const user       = actingUser(siteConfig.name, input.uid, 'uid') ?? 0;
+      // On the restricted profiles the file lands where the field puts it:
+      // a chosen destination could plant it where Drupal serves something
+      // else, and a chosen scheme could move a private field's file to public.
+      const { profile } = policies.get(siteConfig.name)!;
+      if (profile !== 'full' && (input.scheme !== undefined || input.destination !== undefined)) {
+        throw new Refusal('param_not_allowed', `Site '${siteConfig.name}' uses the ${profile} tools profile, where scheme and destination are not the agent's to choose.`);
+      }
+      await requireAccessChecks(siteConfig.name);
 
       let built: FileDrushArgs;
       try {
@@ -183,13 +225,13 @@ export function createServer(config: DrushMcpConfig, version: string): McpServer
       }
       catch (err) {
         if (err instanceof FilePreflightError) {
-          return { result: errorResult({ error: err.code, message: err.message, site: siteConfig.name }), exitCode: null, error: err.code };
+          return { result: errorResult({ error: err.code, message: err.message, site: siteConfig.name }), exitCode: null, error: err.code, actingAs: user };
         }
         throw err;
       }
 
       const transport = siteManager.getTransport(siteConfig.name);
-      return outcomeOf(await transport.executeWithStdin(built.command, built.args, built.stdin), built.command, siteConfig.name);
+      return { ...outcomeOf(await transport.executeWithStdin(built.command, built.args, built.stdin), built.command, siteConfig.name), actingAs: user };
     };
   }
 

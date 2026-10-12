@@ -15,19 +15,28 @@ import type { DrushMcpConfig, SiteConfig } from '../src/types.js';
  * a bridge-style error so the audit log has one to record.
  */
 
-let dir:   string;
-let drush: string;
+let dir:      string;
+let drush:    string;
+let oldDrush: string;
 
-beforeAll(() => {
-  dir   = mkdtempSync(join(tmpdir(), 'drush-mcp-server-'));
-  drush = join(dir, 'fake-drush');
-  writeFileSync(drush, [
+function fakeDrush(path: string, bridgeInfo: string): void {
+  writeFileSync(path, [
     '#!/bin/sh',
+    bridgeInfo,
     'if [ "$1" = "mcp:entity-read" ]; then printf \'{"error":"access_denied","message":"no"}\'; exit 0; fi',
     'printf "%s|" "$@"',
     '',
   ].join('\n'));
-  chmodSync(drush, 0o755);
+  chmodSync(path, 0o755);
+}
+
+beforeAll(() => {
+  dir      = mkdtempSync(join(tmpdir(), 'drush-mcp-server-'));
+  drush    = join(dir, 'fake-drush');
+  oldDrush = join(dir, 'old-drush');
+  fakeDrush(drush, 'if [ "$1" = "mcp:bridge-info" ]; then printf \'{"capabilities":["access-checks"]}\'; exit 0; fi');
+  // A 0.5 bridge: the command does not exist.
+  fakeDrush(oldDrush, 'if [ "$1" = "mcp:bridge-info" ]; then echo \'Command "mcp:bridge-info" is not defined.\' >&2; exit 1; fi');
 });
 
 afterAll(() => {
@@ -96,9 +105,9 @@ describe('acting account', () => {
     expect((await call(client, 'drupal_entity_list', { entity_type: 'node' })).text).toBe('mcp:entity-list|--type=node|--user=4|');
   });
 
-  it('passes no --user at all without run_as, so the bridge acts as anonymous', async () => {
+  it('sends --user=0 without run_as, so even a 0.5 bridge acts as anonymous and not as uid 1', async () => {
     const client = await connect(setup({ s: {} }).config);
-    expect((await call(client, 'drupal_entity_list', { entity_type: 'node' })).text).toBe('mcp:entity-list|--type=node|');
+    expect((await call(client, 'drupal_entity_list', { entity_type: 'node' })).text).toBe('mcp:entity-list|--type=node|--user=0|');
   });
 
   it('lets the agent name any account on a full site', async () => {
@@ -135,11 +144,39 @@ describe('acting account', () => {
     expect(sent).toContain('--user=0');
   });
 
+  it('lets the file land only where the field puts it on a restricted site', async () => {
+    const client = await connect(setup({ s: { run_as: 4, tools: { profile: 'content' } } }).config);
+    const args   = { content_base64: Buffer.from('x').toString('base64'), filename: 'a.png', entity_type: 'node', entity_id: 1, field_name: 'field_image' };
+    for (const extra of [{ destination: 'styles/thumbnail/public' }, { scheme: 'public' }]) {
+      const refused = await call(client, 'drupal_file_attach', { ...args, ...extra });
+      expect(JSON.parse(refused.text)).toMatchObject({ error: 'param_not_allowed' });
+    }
+  });
+
+  it('refuses a restricted profile on a bridge without access checks, and leaves full alone', async () => {
+    const restricted = await connect(setup({ s: { command: oldDrush, tools: { profile: 'read-only' } } }).config);
+    const refused    = await call(restricted, 'drupal_entity_read', { entity_type: 'node', id: 1 });
+    expect(JSON.parse(refused.text)).toMatchObject({ error: 'bridge_too_old' });
+
+    const full = await connect(setup({ s: { command: oldDrush } }).config);
+    expect((await call(full, 'drupal_entity_list', { entity_type: 'node' })).isError).toBe(false);
+  });
+
   it('sends no --user to the bridge when the agent names the owner itself', async () => {
     const client = await connect(setup({ s: {} }).config);
     const sent   = (await call(client, 'drupal_file_upload', { content_base64: Buffer.from('x').toString('base64'), filename: 'a.txt', uid: 4 })).text.split('|');
     expect(sent).toContain('--uid=4');
     expect(sent.some((arg) => arg.startsWith('--user='))).toBe(false);
+  });
+});
+
+describe('drupal_status', () => {
+  it('asks Drush for every status field but the database credentials', async () => {
+    const client = await connect(setup({ s: {} }).config);
+    const sent   = (await call(client, 'drupal_status', {})).text;
+    expect(sent).toMatch(/^core:status\|--fields=drupal-version,/);
+    expect(sent).not.toContain('db-password');
+    expect(sent).not.toContain('db-username');
   });
 });
 
@@ -163,6 +200,8 @@ describe('audit log', () => {
       ['drupal_file_upload', 'dev',  'error',   'EXTENSION_FORBIDDEN'],
     ]);
     expect(lines[0]).toMatchObject({ exit_code: 0 });
+    expect(lines[0]).not.toHaveProperty('as');
+    expect(lines[2]).toMatchObject({ as: 0 });
     expect(lines[0].time).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(typeof lines[0].duration_ms).toBe('number');
     expect(lines[3].args).toEqual({ name: 'bob', password: '[redacted]' });

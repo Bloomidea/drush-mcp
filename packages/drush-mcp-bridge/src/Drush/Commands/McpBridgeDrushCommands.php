@@ -361,6 +361,20 @@ final class McpBridgeDrushCommands extends DrushCommands {
           $query->condition($field, $value);
         }
 
+        // Node grants do not cover the published status, and range() runs
+        // before the per-entity check below, so sorted paging would show where
+        // an unpublished node sits. Views adds the same condition.
+        if ($type === 'node') {
+          $account = \Drupal::currentUser();
+          if (!$account->hasPermission('bypass node access') && !$account->hasPermission('view any unpublished content')) {
+            $visible = $query->orConditionGroup()->condition('status', 1);
+            if ($account->isAuthenticated() && $account->hasPermission('view own unpublished content')) {
+              $visible->condition($query->andConditionGroup()->condition('status', 0)->condition('uid', $account->id()));
+            }
+            $query->condition($visible);
+          }
+        }
+
         if ($sortParts !== []) {
           $query->sort($sortParts[0], $sortParts[1] ?? 'ASC');
         }
@@ -389,6 +403,21 @@ final class McpBridgeDrushCommands extends DrushCommands {
         $this->outputError('drush_error', $e->getMessage());
       }
     });
+  }
+
+  /**
+   * Reports what this bridge guarantees, for the MCP server to check.
+   *
+   * Prints JSON with a `capabilities` list. `access-checks` means the mcp:*
+   * commands apply Drupal's entity and field access for the acting account
+   * and default to anonymous. The server refuses its read-only and content
+   * profiles on a site whose bridge lacks it, since a 0.5 bridge would run
+   * every call as uid 1 with no checks. Reads nothing from the site.
+   */
+  #[CLI\Command(name: 'mcp:bridge-info')]
+  #[CLI\Usage(name: 'drush mcp:bridge-info', description: 'Prints {"capabilities":["access-checks"]}')]
+  public function bridgeInfo(): void {
+    $this->io()->write(json_encode(['capabilities' => ['access-checks']], JSON_THROW_ON_ERROR));
   }
 
   /**
@@ -735,6 +764,13 @@ final class McpBridgeDrushCommands extends DrushCommands {
     if ($destination === '' || $destination[0] === '/' || str_contains($destination, '..')) {
       throw new FilePreflightException('destination must be relative and must not contain ".."', 'INVALID_DESTINATION');
     }
+    // Directories Drupal writes and serves itself: a file planted under
+    // styles/ is served as the derivative of another image, one under css/
+    // or js/ as part of every page's aggregates.
+    $segments = array_values(array_filter(explode('/', $destination), fn(string $segment) => $segment !== '' && $segment !== '.'));
+    if (in_array(strtolower($segments[0] ?? ''), ['styles', 'css', 'js', 'php'], TRUE)) {
+      throw new FilePreflightException(sprintf('destination may not start with "%s/", which Drupal generates and serves itself', $segments[0]), 'INVALID_DESTINATION');
+    }
 
     // 3. Extension allowlist (intersected with field allowlist when present).
     $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
@@ -891,6 +927,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
    *   The fields the account may not set to their new values.
    */
   private function fieldsDeniedForEdit(ContentEntityInterface $entity, ContentEntityInterface $reference, array $names): array {
+    $keys   = $this->entityKeyFields($entity);
     $denied = [];
     foreach ($names as $name) {
       if (!$entity->hasField($name)) {
@@ -903,14 +940,33 @@ final class McpBridgeDrushCommands extends DrushCommands {
       if ($reference->hasField($name) && $items->equals($reference->get($name))) {
         continue;
       }
-      // Read-only fields are the entity keys (id, uuid, revision, bundle):
-      // edit access says nothing about them, and a create that carries the
-      // id of an existing entity saves over it.
-      if ($items->getFieldDefinition()->isReadOnly() || !$items->access('edit')) {
+      // Edit access says nothing about the entity keys, and a create that
+      // carries the id of an existing entity saves over it. Only the keys are
+      // refused here: other read-only fields include computed ones such as
+      // `path` and `moderation_state`, which are meant to be set.
+      if (in_array($name, $keys, TRUE) || !$items->access('edit')) {
         $denied[] = $name;
+        continue;
+      }
+      // PathItem saves into whichever alias `pid` names, with no check that
+      // the alias belongs to this entity. Only the entity's own pid may come
+      // back.
+      if ($name === 'path' && $items->pid !== NULL && $items->pid !== '' && (string) $items->pid !== (string) ($entity->isNew() ? '' : $reference->get('path')->pid)) {
+        $denied[] = 'path.pid';
       }
     }
     return $denied;
+  }
+
+  /**
+   * The field names of the entity keys: id, uuid, revision and bundle.
+   *
+   * @return string[]
+   *   Field names.
+   */
+  private function entityKeyFields(ContentEntityInterface $entity): array {
+    $type = $entity->getEntityType();
+    return array_values(array_filter(array_map(fn(string $key) => $type->getKey($key) ?: NULL, ['id', 'uuid', 'revision', 'bundle'])));
   }
 
   /**
