@@ -116,8 +116,13 @@ final class McpBridgeDrushCommands extends DrushCommands {
         $bundleKey    = $entityType->getKey('bundle');
         $storage      = $this->entityTypeManager->getStorage($entityTypeId);
 
+        $context = $this->createAccessContext($entityTypeId, $fields);
+        if ($context === NULL) {
+          $this->outputError('validation_error', sprintf('A %s needs `gid`, the id of an existing group.', $entityTypeId));
+          return;
+        }
         $access = $this->entityTypeManager->getAccessControlHandler($entityTypeId)
-          ->createAccess($bundleKey ? $bundle : NULL, NULL, [], TRUE);
+          ->createAccess($bundleKey ? $bundle : NULL, NULL, $context, TRUE);
         if (!$access->isAllowed()) {
           $this->outputAccessDenied(sprintf('create %s:%s', $entityTypeId, $bundle), $access);
           return;
@@ -165,7 +170,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
           'uri'  => '/' . $entityTypeId . '/' . $entity->id(),
         ], JSON_THROW_ON_ERROR));
       }
-      catch (\Exception $e) {
+      catch (\Throwable $e) {
         $this->outputError('drush_error', $e->getMessage());
       }
     });
@@ -203,7 +208,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
         $serialized = $this->entitySerializer->serialize($entity);
         $this->io()->write(json_encode($serialized, JSON_THROW_ON_ERROR));
       }
-      catch (\Exception $e) {
+      catch (\Throwable $e) {
         $this->outputError('drush_error', $e->getMessage());
       }
     });
@@ -284,7 +289,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
           'changed_fields' => $changedFields,
         ], JSON_THROW_ON_ERROR));
       }
-      catch (\Exception $e) {
+      catch (\Throwable $e) {
         $this->outputError('drush_error', $e->getMessage());
       }
     });
@@ -399,7 +404,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
           'items' => $items,
         ], JSON_THROW_ON_ERROR));
       }
-      catch (\Exception $e) {
+      catch (\Throwable $e) {
         $this->outputError('drush_error', $e->getMessage());
       }
     });
@@ -515,7 +520,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
 
         $this->io()->write(json_encode($fields, JSON_THROW_ON_ERROR));
       }
-      catch (\Exception $e) {
+      catch (\Throwable $e) {
         $this->outputError('drush_error', $e->getMessage());
       }
     });
@@ -563,7 +568,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
       catch (FilePreflightException $e) {
         $this->outputError($e->getErrorCode(), $e->getMessage());
       }
-      catch (\Exception $e) {
+      catch (\Throwable $e) {
         $this->outputError('drush_error', $e->getMessage());
       }
     });
@@ -719,7 +724,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
     catch (FilePreflightException $e) {
       $this->outputError($e->getErrorCode(), $e->getMessage());
     }
-    catch (\Exception $e) {
+    catch (\Throwable $e) {
       $this->outputError('drush_error', $e->getMessage());
     }
     });
@@ -959,6 +964,35 @@ final class McpBridgeDrushCommands extends DrushCommands {
   }
 
   /**
+   * The context createAccess() needs for an entity type, or NULL if missing.
+   *
+   * The Group module decides whether a relationship may be created against
+   * the group it joins, which its access handler reads from
+   * $context['group'] and dies with a TypeError without. The group is the
+   * `gid` the caller sends, as Group's own GroupRelationshipCreateAccessCheck
+   * takes it from the route. `group_content` is the Group 1.x name.
+   *
+   * @param array<string, mixed> $fields
+   *   The decoded --fields.
+   *
+   * @return array<string, mixed>|null
+   *   The context, empty for every other entity type; NULL when a group
+   *   relationship names no existing group.
+   */
+  private function createAccessContext(string $entityTypeId, array $fields): ?array {
+    if (!in_array($entityTypeId, ['group_relationship', 'group_content'], TRUE)) {
+      return [];
+    }
+    // `gid` arrives as 7, "7", {"target_id": 7} or [{"target_id": 7}].
+    $gid = $fields['gid'] ?? NULL;
+    if (is_array($gid)) {
+      $gid = $gid['target_id'] ?? ($gid[0]['target_id'] ?? NULL);
+    }
+    $group = is_scalar($gid) && (string) $gid !== '' ? $this->entityTypeManager->getStorage('group')->load($gid) : NULL;
+    return $group === NULL ? NULL : ['group' => $group];
+  }
+
+  /**
    * The field names of the entity keys: id, uuid, revision and bundle.
    *
    * @return string[]
@@ -1070,7 +1104,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
         $this->accountSwitcher->switchBack();
       }
     }
-    catch (\Exception $e) {
+    catch (\Throwable $e) {
       $this->outputError('drush_error', 'Failed to switch user: ' . $e->getMessage());
     }
   }

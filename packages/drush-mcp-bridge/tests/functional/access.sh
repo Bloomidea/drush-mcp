@@ -96,6 +96,22 @@ check 'a 0.5.x server sending only --uid still acts as that owner' ".attached_to
 check 'no file may land under styles/, which Drupal serves as derivatives' '.error == "INVALID_DESTINATION"' \
   "$("$PROJECT/vendor/bin/drush" --root="$PROJECT/web" mcp:file-attach --filename=pixel.png --destination=./styles/thumbnail/public --mode=replace --size="$SIZE" --entity-type=node --entity-id="$PUBLISHED" --field-name=field_image --uid="$EDITOR" < "$PNG" 2>&1)"
 
+echo '# group relationship'
+if drush pm:list --status=enabled --field=name | grep -qx group; then
+  group="$(drush php:script "$HERE/fixtures-group.php" | tail -1)"
+  GID="$(jq -r .gid <<<"$group")"
+  RTYPE="$(jq -r .relationship_type <<<"$group")"
+  # Group reads the group from the create context, and died with a TypeError
+  # (no JSON at all) when the bridge passed none.
+  expect 'a member adds an article to the group'     '.id != null'                  mcp:entity-create --type=group_relationship --bundle="$RTYPE" --fields="{\"gid\":$GID,\"entity_id\":$PUBLISHED}" --user=1
+  expect 'gid may come as a target_id list'          '.id != null'                  mcp:entity-create --type=group_relationship --bundle="$RTYPE" --fields="{\"gid\":[{\"target_id\":$GID}],\"entity_id\":$UNPUBLISHED}" --user=1
+  expect 'a non-member is refused, as JSON'          '.error == "access_denied"'    mcp:entity-create --type=group_relationship --bundle="$RTYPE" --fields="{\"gid\":$GID,\"entity_id\":$PUBLISHED}" --user="$EDITOR"
+  expect 'a relationship without gid is refused'     '.error == "validation_error"' mcp:entity-create --type=group_relationship --bundle="$RTYPE" --fields="{\"entity_id\":$PUBLISHED}" --user=1
+  expect 'a relationship to no group is refused'     '.error == "validation_error"' mcp:entity-create --type=group_relationship --bundle="$RTYPE" --fields="{\"gid\":999999,\"entity_id\":$PUBLISHED}" --user=1
+else
+  echo 'SKIP  group is not enabled (composer require drupal/group:^3, drush en group gnode)'
+fi
+
 echo '# bridge info'
 expect 'the bridge reports access checks'         '.capabilities | index("access-checks") != null' mcp:bridge-info
 rm -f "$PNG"

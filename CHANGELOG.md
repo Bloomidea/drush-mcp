@@ -78,6 +78,11 @@ access checks and the server's `run_as` meet in the middle.
 
 ### Fixed
 
+- Creating a `group_relationship` (or Group 1's `group_content`) checks
+  access against the group in `gid`, as Group's own routes do; without that
+  context Group's access handler died with a `TypeError`. `gid` must name an
+  existing group. Any PHP `Error` in a bridge command now comes back as JSON
+  instead of a bare Drush failure.
 - `drupal_config_get`, `drupal_config_set`, `drupal_user_create`,
   `drupal_user_block` and `drupal_entity_delete` refuse a positional value
   starting with `-`, which Drush read as an option (`--include` loads code

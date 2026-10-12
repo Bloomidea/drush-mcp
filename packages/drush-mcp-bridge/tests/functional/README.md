@@ -22,3 +22,11 @@ vendor/bin/drush recipe "$PWD/web/core/recipes/content_editor_role"
 On Drupal 11.4 the standard profile installs no content types, hence the two
 recipes. Each run creates its own users and nodes, so the script can be run
 again on the same site. It needs `jq`.
+
+The group relationship cases run only when the Group module is enabled, and
+are skipped otherwise:
+
+```bash
+composer require 'drupal/group:^3'
+vendor/bin/drush en group gnode -y
+```
