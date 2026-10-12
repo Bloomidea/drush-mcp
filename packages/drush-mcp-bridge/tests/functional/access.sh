@@ -59,9 +59,18 @@ expect 'editor may name itself as author'         '.id != null'                 
 expect 'editor cannot name another author'        '.error == "access_denied" and .fields == ["uid"]' mcp:entity-create --type=node --bundle=article --fields='{"title":"Spoof","uid":1}' --user="$EDITOR"
 expect 'plain posts a published comment as itself' '.id != null'                     mcp:entity-create --type=comment --bundle=comment --fields="{\"entity_id\":{\"target_id\":$PUBLISHED},\"entity_type\":\"node\",\"field_name\":\"comment\",\"uid\":$PLAIN,\"subject\":\"Hi\",\"comment_body\":{\"value\":\"<p>Hi</p>\",\"format\":\"basic_html\"},\"status\":1}" --user="$PLAIN"
 
+expect 'a create cannot carry the id of an existing node' '.error == "access_denied" and (.fields | index("nid") != null)' mcp:entity-create --type=node --bundle=article --fields="{\"title\":\"Overwrite\",\"nid\":$PUBLISHED}" --user="$EDITOR"
+expect 'a create cannot carry a name that is not a field' '.error == "access_denied" and .fields == ["not_a_field"]' mcp:entity-create --type=node --bundle=article --fields='{"title":"x","not_a_field":1}' --user="$EDITOR"
+expect 'an update cannot change a read-only key'  '.error == "access_denied" and .fields == ["uuid"]' mcp:entity-update --type=node --id="$PUBLISHED" --fields='{"uuid":"00000000-0000-0000-0000-000000000000"}' --user="$EDITOR"
+
 echo '# list'
 expect 'plain does not see the unpublished node'  "[.items[].id] | index(\"$UNPUBLISHED\") == null" mcp:entity-list --type=node --user="$PLAIN"
 expect 'admin sees the unpublished node'          "[.items[].id] | index(\"$UNPUBLISHED\") != null" mcp:entity-list --type=node --user=1
+expect 'plain may filter and sort on visible fields' '.items | type == "array"'      mcp:entity-list --type=node --filters='{"status":1}' --sort=created:DESC --user="$PLAIN"
+expect 'plain cannot filter users on mail'        '.error == "access_denied" and .fields == ["mail"]' mcp:entity-list --type=user --filters='{"mail":"editor@example.com"}' --user="$PLAIN"
+expect 'plain cannot sort users on mail'          '.error == "access_denied"'        mcp:entity-list --type=user --sort=mail --user="$PLAIN"
+expect 'no filter may follow a reference'         '.error == "access_denied"'        mcp:entity-list --type=node --filters='{"uid.entity.mail":"admin@example.com"}' --user=1
+expect 'admin may filter users on mail'           '.items | length == 1'             mcp:entity-list --type=user --filters='{"mail":"editor@example.com"}' --user=1
 
 echo '# attach'
 PNG="$(mktemp -t drush-mcp-pixel).png"

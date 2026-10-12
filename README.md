@@ -352,15 +352,15 @@ sites:
 
 ### The acting account
 
-Bridge commands act as one Drupal account and apply its permissions: create, view and update access on the entity, view access on every field returned (a user's `pass` and another user's `mail` never come back), edit access on every field whose value changes, and update access on the entity a file is attached to. `drupal_entity_list` drops entities the account may not view, so a page can come back shorter than `limit`.
+Bridge commands act as one Drupal account and apply its permissions: create, view and update access on the entity, view access on every field returned (a user's `pass` and another user's `mail` never come back), edit access on every field whose value changes, and update access on the entity a file is attached to. `drupal_entity_list` drops entities the account may not view, so a page can come back shorter than `limit`, and refuses to filter or sort on a field the account may not view, or along a reference (`uid.entity.mail`): a filter on `mail` answers whose address it is even if `mail` is never returned. `fields` may not change read-only fields such as `nid` or `uuid`, nor carry names that are not fields.
 
-The account is the `user` (or, for the file tools, `uid`) the agent names, else the site's `run_as`, else anonymous. Before 0.6.0 the fallback was uid 1. On the `read-only` and `content` profiles the agent may not name any account other than `run_as`, so the checks stay the operator's; on `full`, which already has `drupal_php_eval`, it may.
+The account is the `user` (or, for the file tools, `uid`) the agent names, else the site's `run_as`, else anonymous; `file_upload.default_uid` only sets the owner recorded on the file, never the account that acts. Before 0.6.0 the fallback was uid 1. On the `read-only` and `content` profiles the agent may not name any account other than `run_as`, so the checks stay the operator's; on `full`, which already has `drupal_php_eval`, it may.
 
 `drupal_file_upload` writes a managed file with no entity to check against, and the tools outside the bridge run as the Drush superuser. That is why neither is in a restricted profile.
 
 ### Audit log
 
-Every tool call appends one JSON line to `~/.drush-mcp/audit.jsonl`: time, site, tool, arguments, outcome (`ok`, `error` or `refused`), error code, exit code and duration. Passwords are redacted, `content_base64` is reduced to a hash and a length, and strings over 500 characters keep their first 200 plus a hash. The file is created `0600` in a `0700` directory and only ever appended to. Set `defaults.audit_log` to another path, or to `false` to turn it off.
+Every tool call appends one JSON line to `~/.drush-mcp/audit.jsonl`: time, site, tool, arguments, outcome (`ok`, `error` or `refused`), error code, exit code and duration. Credential-shaped names (`password`, `secret`, `token`, `api_key`) are redacted at any depth, as are the value of a `drupal_config_set` on such a key and the password of `drush user:password`; PHP code and SQL are logged as given. `content_base64` is reduced to a hash and a length, and strings over 500 characters keep their first 200 plus a hash. The file is created `0600` in a `0700` directory and only ever appended to. Set `defaults.audit_log` to another path, or to `false` to turn it off.
 
 ```json
 {"time":"2026-10-12T12:20:03.114Z","site":"production","tool":"drupal_entity_update","args":{"entity_type":"node","id":1,"fields":{"title":"New title"}},"outcome":"ok","exit_code":0,"duration_ms":1843}

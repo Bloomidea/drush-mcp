@@ -138,6 +138,10 @@ final class McpBridgeDrushCommands extends DrushCommands {
           $this->outputError('access_denied', sprintf('The acting account may not set these fields: %s.', implode(', ', $denied)), ['fields' => $denied]);
           return;
         }
+        if (!$entity->isNew()) {
+          $this->outputError('access_denied', 'A create may not name the id of an existing entity.');
+          return;
+        }
 
         $violations = $entity->validate();
         if ($violations->count() > 0) {
@@ -341,15 +345,23 @@ final class McpBridgeDrushCommands extends DrushCommands {
           }
         }
 
+        $sortParts = $sort !== NULL ? explode(':', $sort, 2) : [];
+        $queried   = array_map('strval', array_keys(is_array($filters) ? $filters : []));
+        if ($sortParts !== []) {
+          $queried[] = $sortParts[0];
+        }
+        $denied = $this->fieldsDeniedForQuery($type, $bundle, $queried);
+        if ($denied !== []) {
+          $this->outputError('access_denied', sprintf('The acting account may not filter or sort on: %s.', implode(', ', $denied)), ['fields' => $denied]);
+          return;
+        }
+
         foreach ($filters as $field => $value) {
           $query->condition($field, $value);
         }
 
-        if ($sort !== NULL) {
-          $parts     = explode(':', $sort, 2);
-          $sortField = $parts[0];
-          $sortDir   = $parts[1] ?? 'ASC';
-          $query->sort($sortField, $sortDir);
+        if ($sortParts !== []) {
+          $query->sort($sortParts[0], $sortParts[1] ?? 'ASC');
         }
 
         $query->range($offset, $limit);
@@ -881,14 +893,60 @@ final class McpBridgeDrushCommands extends DrushCommands {
     $denied = [];
     foreach ($names as $name) {
       if (!$entity->hasField($name)) {
+        // Not a field of this entity: create() would keep it as a loose
+        // value that hooks may read, and nothing could check it.
+        $denied[] = $name;
         continue;
       }
       $items = $entity->get($name);
       if ($reference->hasField($name) && $items->equals($reference->get($name))) {
         continue;
       }
-      if (!$items->access('edit')) {
+      // Read-only fields are the entity keys (id, uuid, revision, bundle):
+      // edit access says nothing about them, and a create that carries the
+      // id of an existing entity saves over it.
+      if ($items->getFieldDefinition()->isReadOnly() || !$items->access('edit')) {
         $denied[] = $name;
+      }
+    }
+    return $denied;
+  }
+
+  /**
+   * Names the filter and sort paths that the current account may not query.
+   *
+   * A condition on a field answers questions about it even when the field is
+   * never returned: filtering users on `mail` tells whose address it is. So a
+   * path must start with a field the account may view, and must not follow a
+   * reference into another entity (`uid.entity.mail`), whose fields would
+   * each need their own check.
+   *
+   * @param string[] $paths
+   *   Field names, optionally with a property (`body.value`).
+   *
+   * @return string[]
+   *   The paths refused.
+   */
+  private function fieldsDeniedForQuery(string $entityTypeId, ?string $bundle, array $paths): array {
+    $definitions = $this->entityFieldManager->getBaseFieldDefinitions($entityTypeId);
+    if ($bundle !== NULL) {
+      $definitions = $this->entityFieldManager->getFieldDefinitions($entityTypeId, $bundle);
+    }
+    $map     = $this->entityFieldManager->getFieldMap()[$entityTypeId] ?? [];
+    $handler = $this->entityTypeManager->getAccessControlHandler($entityTypeId);
+
+    $denied = [];
+    foreach ($paths as $path) {
+      $parts      = explode('.', (string) $path);
+      $name       = $parts[0];
+      $definition = $definitions[$name] ?? NULL;
+      // A bundle field queried without --bundle: check it on a bundle that
+      // has it.
+      if ($definition === NULL && $bundle === NULL && !empty($map[$name]['bundles'])) {
+        $definition = $this->entityFieldManager->getFieldDefinitions($entityTypeId, reset($map[$name]['bundles']))[$name] ?? NULL;
+      }
+      if ($definition === NULL || in_array('entity', $parts, TRUE) || !$handler->fieldAccess('view', $definition)) {
+        $denied[] = (string) $path;
       }
     }
     return $denied;

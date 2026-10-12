@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, statSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { AuditLog, summarizeArgs } from '../src/audit.js';
+import { AuditLog, summarizeArgs, summarizeCall } from '../src/audit.js';
 
 describe('summarizeArgs', () => {
   it('redacts passwords at any depth', () => {
@@ -27,6 +27,29 @@ describe('summarizeArgs', () => {
 
   it('walks arrays', () => {
     expect(summarizeArgs({ arguments: ['a', { password: 'x' }] })).toEqual({ arguments: ['a', { password: '[redacted]' }] });
+  });
+
+  it('redacts any credential-shaped name, not only password', () => {
+    expect(summarizeArgs({ fields: { field_api_key: 'k', field_secret: 's', token: 't', title: 'kept' } }))
+      .toEqual({ fields: { field_api_key: '[redacted]', field_secret: '[redacted]', token: '[redacted]', title: 'kept' } });
+  });
+
+  it('leaves names that merely contain the letters alone', () => {
+    expect(summarizeArgs({ passage: 'p', key: 'name', tokenizer: 't' })).toEqual({ passage: 'p', key: 'name', tokenizer: 't' });
+  });
+});
+
+describe('summarizeCall', () => {
+  it('redacts the value of a config_set on a credential key', () => {
+    expect(summarizeCall('drupal_config_set', { name: 'smtp.settings', key: 'smtp_password', value: 'hunter2' }))
+      .toEqual({ name: 'smtp.settings', key: 'smtp_password', value: '[redacted]' });
+    expect(summarizeCall('drupal_config_set', { name: 'system.site', key: 'name', value: 'Atrium' }))
+      .toEqual({ name: 'system.site', key: 'name', value: 'Atrium' });
+  });
+
+  it('redacts the password of drush user:password', () => {
+    expect(summarizeCall('drupal_drush', { command: 'user:password', arguments: ['admin', 'hunter2'] }))
+      .toEqual({ command: 'user:password', arguments: ['admin', '[redacted]'] });
   });
 });
 

@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z, type ZodRawShape } from 'zod';
 
-import { AuditLog, summarizeArgs } from './audit.js';
+import { AuditLog, summarizeCall } from './audit.js';
 import { normalizeError } from './errors.js';
 import type { ToolName } from './policy.js';
 import { SiteManager } from './site-manager.js';
@@ -118,7 +118,7 @@ export function createServer(config: DrushMcpConfig, version: string): McpServer
     }
     server.tool(name, description, shape, async ({ site, ...input }: Record<string, unknown>) => {
       const started  = Date.now();
-      const loggable = summarizeArgs(input);
+      const loggable = summarizeCall(name, input);
       let siteName: string | null = null;
       let outcome: Outcome;
       try {
@@ -171,8 +171,11 @@ export function createServer(config: DrushMcpConfig, version: string): McpServer
   function createFileHandler<T extends FileUploadInput>(builderFn: (input: T, fileConfig: ReturnType<typeof resolveFileUploadConfig>) => FileDrushArgs): Runner {
     return async (siteConfig, input) => {
       const fileConfig = siteManager.getFileUploadConfig(siteConfig.name);
-      // `uid` is the owner and, unless run_as says otherwise, the acting account.
-      const user       = actingUser(siteConfig.name, input.uid, 'uid');
+      // `uid` is the owner and, unless run_as says otherwise, the acting
+      // account. With neither, the account is anonymous, never the owner the
+      // operator set as default_uid for attribution: that would let a
+      // default_uid of 1 run every unattributed attach as the administrator.
+      const user       = actingUser(siteConfig.name, input.uid, 'uid') ?? 0;
 
       let built: FileDrushArgs;
       try {

@@ -36,13 +36,19 @@ const HEAD       = 200;
 
 const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex');
 
+// Names that hold a credential wherever they appear, as a whole word of a
+// snake_case or dotted name: `pass`, `field_api_key`, `smtp.password`.
+const SECRET_NAME = /(^|[_.])(pass|passwd|password|secret|token|api_?key|credentials?)($|[_.])/i;
+
+const REDACTED = '[redacted]';
+
 /**
  * The arguments as they go into the log: secrets replaced, file bytes reduced
  * to a hash, long strings cut to a head plus hash, at any depth.
  */
 export function summarizeArgs(value: unknown, key = ''): unknown {
-  if (/^(pass|password)$/i.test(key)) {
-    return '[redacted]';
+  if (SECRET_NAME.test(key)) {
+    return REDACTED;
   }
   if (key === 'content_base64' && typeof value === 'string') {
     return { sha256: sha256(value), length: value.length };
@@ -59,6 +65,23 @@ export function summarizeArgs(value: unknown, key = ''): unknown {
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, summarizeArgs(v, k)]));
   }
   return value;
+}
+
+/**
+ * summarizeArgs, plus the two calls whose secret sits in a value with an
+ * innocent name: `drupal_config_set` on a credential key, and Drush's
+ * `user:password` through `drupal_drush`. Code and SQL are logged as given;
+ * nothing can tell a secret inside them apart.
+ */
+export function summarizeCall(tool: string, input: Record<string, unknown>): unknown {
+  const args = summarizeArgs(input) as Record<string, unknown>;
+  if (tool === 'drupal_config_set' && typeof input.key === 'string' && SECRET_NAME.test(input.key)) {
+    args.value = REDACTED;
+  }
+  if (tool === 'drupal_drush' && ['user:password', 'user-password', 'upwd'].includes(String(input.command)) && Array.isArray(args.arguments)) {
+    args.arguments = args.arguments.map((arg, i) => (i === 0 ? arg : REDACTED));
+  }
+  return args;
 }
 
 function expandHome(path: string): string {

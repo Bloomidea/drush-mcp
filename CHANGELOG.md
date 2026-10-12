@@ -38,12 +38,25 @@ access checks and the server's `run_as` meet in the middle.
   every field whose value changes (a value equal to what the entity would get
   anyway needs none, as in core's REST), and update access on the entity a
   file is attached to. `drupal_entity_list` drops entities the account may
-  not view. There is no switch to turn this off; an account with the right
-  permissions, or uid 1 as `run_as`, gets the old results.
+  not view, and refuses a filter or sort on a field the account may not view
+  or one that follows a reference (`uid.entity.mail`). There is no switch to
+  turn this off; an account with the right permissions, or uid 1 as
+  `run_as`, gets the old results.
+- **`fields` may not carry read-only fields or names that are not fields.**
+  An entity key (`nid`, `uuid`, `vid`, the bundle) is refused unless it
+  equals the current value, so a create can no longer name an existing id and
+  save over that entity. An unknown name used to be ignored silently.
 - **The audit log is on.** Turn it off with `defaults.audit_log: false`.
+  Credential-shaped names (`password`, `secret`, `token`, `api_key`, at any
+  depth) are redacted, as are the value of a `drupal_config_set` on such a
+  key and the password of `drush user:password`. PHP code and SQL are logged
+  as given.
 - The file commands take `--user`, the acting account, apart from `--uid`,
-  the owner. Without `--user` they act as the owner, as before, and fall back
-  to anonymous instead of uid 1 when there is no owner.
+  the owner. Without `--user` the bridge acts as the owner, as before, and as
+  anonymous instead of uid 1 when there is no owner. The server sends
+  `--user` whenever the two differ: an attach that names no `uid` acts as
+  `run_as` or anonymous, never as `file_upload.default_uid`, which is only
+  the owner recorded on the file.
 
 ### Fixed
 

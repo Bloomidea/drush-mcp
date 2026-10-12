@@ -128,6 +128,13 @@ describe('acting account', () => {
     expect(JSON.parse(refused.text)).toMatchObject({ error: 'user_not_allowed' });
   });
 
+  it('acts as anonymous, not as default_uid, when nobody is named', async () => {
+    const client = await connect(setup({ s: { file_upload: { default_uid: 1 } } }).config);
+    const sent   = (await call(client, 'drupal_file_upload', { content_base64: Buffer.from('x').toString('base64'), filename: 'a.txt' })).text.split('|');
+    expect(sent).toContain('--uid=1');
+    expect(sent).toContain('--user=0');
+  });
+
   it('sends no --user to the bridge when the agent names the owner itself', async () => {
     const client = await connect(setup({ s: {} }).config);
     const sent   = (await call(client, 'drupal_file_upload', { content_base64: Buffer.from('x').toString('base64'), filename: 'a.txt', uid: 4 })).text.split('|');
