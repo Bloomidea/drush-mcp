@@ -1,6 +1,6 @@
 ---
 name: drupal
-version: 1.2.0
+version: 1.3.0
 description: >-
   Drupal site management: create, read, update, delete, and query entities,
   upload and attach files to fields, introspect field schemas, manage
@@ -68,7 +68,7 @@ These use the drush-bridge package (`bloomidea/drush-mcp-bridge`) installed on t
 
 | Tool | Description |
 |------|-------------|
-| `drupal_drush` | Run any Drush command (e.g., `pm:security`, `queue:list`). Accepts optional `format` param (json, table, yaml) |
+| `drupal_drush` | Run a Drush command by name (e.g., `pm:security`, `queue:list`). `command` is the bare name only; options and arguments go in `arguments`. Accepts optional `format` param (json, table, yaml) |
 | `drupal_php_eval` | Execute arbitrary PHP on the Drupal site |
 | `drupal_sql_query` | Run SQL query against the database |
 
@@ -184,6 +184,7 @@ Use `drupal_file_attach` to upload bytes and attach to a `file` or `image` field
 **Choose the right input mode — `content_path` vs `content_base64`:**
 
 - **`content_path` (recommended for local agents)** — pass an absolute path on the machine running the MCP server. The MCP reads the file from disk and pipes it to Drush. **Use this whenever you have the file on the agent's local filesystem.** Required for files over ~10–15 KB if the agent talks to the MCP through an LLM provider, because dense base64 inside tool arguments can trigger provider-side safety filters and the call gets rejected. `content_path` keeps the LLM message stream clean (just a short path string).
+  Since 0.5.1 the path must resolve, symlinks followed, inside the site's `content_roots` (by default only the system temp directory and `/tmp`), and the file on disk must itself have an allowed extension. On `PATH_OUTSIDE_ROOTS`, copy the file into `/tmp` and upload that copy; do not ask for the root to be widened just to finish the task.
 - **`content_base64`** — base64-encoded file bytes. Use when the file is not on the agent's local filesystem (cross-host MCP deployments, content generated in-memory, etc.). Slower for large files because the bytes traverse the LLM message stream.
 
 Exactly one of the two must be provided. Sending both → `VALIDATION_ERROR`. Sending neither → `VALIDATION_ERROR`.
@@ -269,7 +270,9 @@ Default `mode` is `append` (adds to the existing list, respecting cardinality). 
 | `PATH_NOT_ABSOLUTE` | `content_path` is not an absolute path |
 | `PATH_NOT_FOUND` | `content_path` does not exist or is not readable by the MCP server process |
 | `PATH_NOT_FILE` | `content_path` points to a directory or non-regular file |
-| `EXTENSION_FORBIDDEN` | Extension not in the configured allowlist or the field's `file_extensions` setting |
+| `PATH_OUTSIDE_ROOTS` | `content_path` resolves outside the site's `content_roots`; copy the file into `/tmp` first |
+| `CONFIG_ERROR` | A `content_roots` entry in `drush-mcp.yml` is relative; report it, it is not the agent's to fix |
+| `EXTENSION_FORBIDDEN` | Extension of `filename`, or of the file `content_path` resolves to, not in the configured allowlist or the field's `file_extensions` setting |
 | `SIZE_EXCEEDED` | Larger than `max_size`, the field's `max_filesize`, or PHP `upload_max_filesize`/`post_max_size` |
 | `INVALID_SCHEME` / `INVALID_DESTINATION` | Bad scheme or path traversal attempt on the *destination* (inside Drupal) |
 | `ENTITY_NOT_FOUND` / `FIELD_INVALID` | Target entity doesn't exist or field isn't a `file`/`image` type |

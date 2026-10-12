@@ -1,13 +1,23 @@
-import { afterAll, beforeAll, describe, it, expect } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { afterAll, beforeAll, describe, it, expect, vi } from 'vitest';
+import { execFileSync } from 'child_process';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+
+// Setting process.env.HOME inside a vitest worker thread does not reach the
+// homedir() libuv computes, so the ~ test swaps the function instead.
+const fakeHome = vi.hoisted(() => ({ value: undefined as string | undefined }));
+vi.mock('os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('os')>();
+  return { ...actual, homedir: () => fakeHome.value ?? actual.homedir() };
+});
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
   buildFileUploadArgs,
   buildFileAttachArgs,
   FilePreflightError,
+  type FileUploadInput,
 } from '../../src/tools/file.js';
-import { FILE_UPLOAD_DEFAULTS } from '../../src/types.js';
+import { FILE_UPLOAD_DEFAULTS, type FileUploadConfig } from '../../src/types.js';
 
 const cfg = FILE_UPLOAD_DEFAULTS;
 const b64 = (s: string) => Buffer.from(s).toString('base64');
@@ -275,5 +285,111 @@ describe('content_path input', () => {
     }, cfg);
     expect(args.command).toBe('mcp:file-attach');
     expect(args.stdin.toString()).toBe('hello world');
+  });
+});
+
+describe('content_path roots', () => {
+  let tmp:     string;
+  let allowed: string;
+  let outside: string;
+
+  /** The code a FilePreflightError carries, or 'none' when the call succeeds. */
+  function codeOf(input: Partial<FileUploadInput>, config: Required<FileUploadConfig>): string {
+    try {
+      buildFileUploadArgs({ filename: 'a.md', ...input } as FileUploadInput, config);
+      return 'none';
+    }
+    catch (err) {
+      if (!(err instanceof FilePreflightError)) throw err;
+      return err.code;
+    }
+  }
+
+  beforeAll(() => {
+    // realpath so the fixture paths match what the check resolves to (macOS
+    // puts tmpdir() behind a symlink).
+    tmp     = realpathSync(mkdtempSync(join(tmpdir(), 'drush-mcp-roots-')));
+    allowed = join(tmp, 'allowed');
+    outside = join(tmp, 'allowed-not');
+    mkdirSync(allowed);
+    mkdirSync(outside);
+    writeFileSync(join(allowed, 'ok.md'), 'inside');
+    writeFileSync(join(allowed, 'id_rsa'), 'secret, no extension');
+    writeFileSync(join(outside, 'secret.md'), 'outside');
+    symlinkSync(join(outside, 'secret.md'), join(allowed, 'escape.md'));
+    symlinkSync(join(allowed, 'id_rsa'), join(allowed, 'key.md'));
+    symlinkSync(allowed, join(tmp, 'link-to-allowed'));
+  });
+
+  afterAll(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const roots = (...r: string[]) => ({ ...cfg, content_roots: r });
+
+  it('reads a file inside a configured root', () => {
+    expect(codeOf({ content_path: join(allowed, 'ok.md') }, roots(allowed))).toBe('none');
+  });
+
+  it('refuses a file in a sibling directory that only shares the root as a prefix', () => {
+    expect(codeOf({ content_path: join(outside, 'secret.md') }, roots(allowed))).toBe('PATH_OUTSIDE_ROOTS');
+  });
+
+  it('refuses a path that climbs out of the root with ..', () => {
+    expect(codeOf({ content_path: `${allowed}/../allowed-not/secret.md` }, roots(allowed))).toBe('PATH_OUTSIDE_ROOTS');
+  });
+
+  it('refuses a symlink inside the root that points outside it', () => {
+    expect(codeOf({ content_path: join(allowed, 'escape.md') }, roots(allowed))).toBe('PATH_OUTSIDE_ROOTS');
+  });
+
+  it('checks the extension of the file on disk, not only the filename', () => {
+    expect(codeOf({ content_path: join(allowed, 'id_rsa'), filename: 'key.txt' }, roots(allowed))).toBe('EXTENSION_FORBIDDEN');
+  });
+
+  it('checks the extension of the symlink target, not of the link', () => {
+    expect(codeOf({ content_path: join(allowed, 'key.md') }, roots(allowed))).toBe('EXTENSION_FORBIDDEN');
+  });
+
+  it('follows a root that is itself a symlink', () => {
+    expect(codeOf({ content_path: join(allowed, 'ok.md') }, roots(join(tmp, 'link-to-allowed')))).toBe('none');
+    expect(codeOf({ content_path: join(tmp, 'link-to-allowed', 'ok.md') }, roots(allowed))).toBe('none');
+  });
+
+  it('expands ~ in a root to the home directory', () => {
+    fakeHome.value = tmp;
+    try {
+      expect(codeOf({ content_path: join(allowed, 'ok.md') }, roots('~/allowed'))).toBe('none');
+      expect(codeOf({ content_path: join(outside, 'secret.md') }, roots('~/allowed'))).toBe('PATH_OUTSIDE_ROOTS');
+    }
+    finally {
+      fakeHome.value = undefined;
+    }
+  });
+
+  it('refuses a relative root', () => {
+    expect(codeOf({ content_path: join(allowed, 'ok.md') }, roots('allowed'))).toBe('CONFIG_ERROR');
+  });
+
+  it('turns content_path off with an empty list', () => {
+    expect(codeOf({ content_path: join(allowed, 'ok.md') }, roots())).toBe('PATH_OUTSIDE_ROOTS');
+  });
+
+  it('ignores a root that does not exist', () => {
+    expect(codeOf({ content_path: join(allowed, 'ok.md') }, roots(join(tmp, 'missing'), allowed))).toBe('none');
+  });
+
+  it('admits everything under / when / is a root (the 0.5.0 behaviour)', () => {
+    expect(codeOf({ content_path: join(outside, 'secret.md') }, roots('/'))).toBe('none');
+  });
+
+  it('refuses a FIFO without blocking on it', () => {
+    const fifo = join(allowed, 'pipe.md');
+    execFileSync('mkfifo', [fifo]);
+    expect(codeOf({ content_path: fifo }, roots(allowed))).toBe('PATH_NOT_FILE');
+  });
+
+  it('leaves content_base64 alone', () => {
+    expect(codeOf({ content_base64: b64('x') }, roots())).toBe('none');
   });
 });

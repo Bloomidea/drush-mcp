@@ -145,7 +145,19 @@ sites:
       allowed_extensions: [txt, md, pdf, png, jpg, jpeg, gif, svg, log, sql, json, yaml, yml, zip, tar, gz]
       default_uid: 0                    # 0 = anonymous; set to a real user ID for attribution
       destination_prefix: mcp-uploads   # files land in <scheme>://<prefix>/<UTC YYYY-MM>/
+      content_roots: [<system temp dir>, /tmp]   # where content_path may read from
 ```
+
+`content_roots` lists the local directories `content_path` may read from, on
+the machine running the MCP server. A path is accepted only when it resolves,
+symlinks and `..` followed, inside one of them, and the file it resolves to
+must itself carry an allowed extension: naming a key `key.txt` in `filename`
+no longer gets `~/.ssh/id_rsa` through. Entries are absolute or start with
+`~/`; a root that does not exist is skipped. The default is the system temp
+directory and `/tmp`, so the usual flow (write or resize the file into `/tmp`,
+then upload it) keeps working. Add a project or documents folder when agents
+should upload from there, set `[]` to turn `content_path` off, or set `[/]` to
+get the 0.5.0 behaviour of reading any path back.
 
 The same block is accepted under `defaults`, applying to every site that does
 not set its own. That is the only route into a server started from CLI flags:
@@ -158,12 +170,14 @@ defaults:
   timeout: 30
   file_upload:
     allowed_extensions: [txt, md, pdf, png, jpg, jpeg, gif, svg, html, htm, log, sql, json, yaml, yml, zip, tar, gz]
+    content_roots: [/tmp, ~/Dev, ~/Downloads]
 ```
 
 Resolution is three layers deep, each overriding the one before it key by key:
 the built-in defaults, then `defaults.file_upload`, then the site's own block.
-`allowed_extensions` **replaces** the list rather than extending it, at every
-layer.
+`allowed_extensions` and `content_roots` **replace** the list rather than
+extending it, at every layer: a `content_roots` that should still include
+`/tmp` has to name it.
 
 Before adding `html`, `htm` or anything else a browser executes, know what the
 list is and is not. It gates the agent, not a person: `drupal_file_attach`
@@ -253,7 +267,7 @@ All 19 tools are available regardless of transport:
 | `drupal_user_block` | Block user account |
 | `drupal_file_upload` | Upload bytes and create a managed file entity |
 | `drupal_file_attach` | Upload bytes and attach to a file/image field on a node, comment, or other entity in one round trip |
-| `drupal_drush` | Run any Drush command |
+| `drupal_drush` | Run a Drush command by name; options and arguments go in `arguments` |
 | `drupal_php_eval` | Execute PHP code |
 | `drupal_sql_query` | Run SQL query |
 

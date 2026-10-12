@@ -302,7 +302,7 @@ Config file:
     'Base64-encoded file bytes. Provide this OR content_path. Prefer content_path when running through an LLM provider, since dense base64 in tool arguments can trigger provider-side safety filters above ~15 KB.',
   );
   const contentPathParam = z.string().optional().describe(
-    'Absolute path to a file on the machine running the MCP server (typically your local laptop when using Claude Code). NOT a path on the Drupal server. Provide this OR content_base64. Preferred for files over ~10 KB.',
+    'Absolute path to a file on the machine running the MCP server (typically your local laptop when using Claude Code). NOT a path on the Drupal server. Provide this OR content_base64. Preferred for files over ~10 KB. The path, symlinks followed, must fall inside the site\'s content_roots (by default only the system temp directory and /tmp) and the file itself must carry an allowed extension; copy the file into /tmp first if it lives elsewhere.',
   );
 
   server.tool(

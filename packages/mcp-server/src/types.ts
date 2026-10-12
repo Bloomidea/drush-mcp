@@ -4,11 +4,14 @@ export interface TransportResult {
   exitCode: number;
 }
 
+import { tmpdir } from 'os';
+
 export interface FileUploadConfig {
   max_size?: number;
   allowed_extensions?: string[];
   default_uid?: number;
   destination_prefix?: string;
+  content_roots?: string[];
 }
 
 export interface SiteConfig {
@@ -31,6 +34,12 @@ export const FILE_UPLOAD_DEFAULTS: Required<FileUploadConfig> = {
   allowed_extensions: ['txt', 'md', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'svg', 'log', 'sql', 'json', 'yaml', 'yml', 'zip', 'tar', 'gz'],
   default_uid:        0,
   destination_prefix: 'mcp-uploads',
+  // Where content_path may read from. Only the temp directories by default,
+  // because the usual flow writes a file there (a resized screenshot, an
+  // export) and uploads it; a project or documents folder is a root the
+  // operator adds. `/tmp` is listed apart from tmpdir() because macOS points
+  // TMPDIR elsewhere.
+  content_roots:      [tmpdir(), '/tmp'],
 };
 
 /**

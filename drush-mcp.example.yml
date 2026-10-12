@@ -55,6 +55,7 @@ sites:
   #     allowed_extensions: [txt, md, pdf, png, jpg, sql, log, yml, json]  # replaces the default list, does not extend it
   #     default_uid: 0                    # 0 = anonymous (recommended); set a user ID for attribution
   #     destination_prefix: mcp-uploads   # default; files land in <scheme>://<prefix>/<UTC YYYY-MM>/
+  #     content_roots: [/tmp, ~/Dev]      # local dirs content_path may read from; default: system temp dir and /tmp
 
 defaults:
   timeout: 30
@@ -71,5 +72,11 @@ defaults:
   # htm is a decision that the site serves uploads safely (a CSP sandbox header
   # on file downloads, say); note svg is already in the built-in list and is the
   # same class of document.
+  #
+  # content_roots are the directories on this machine that content_path may
+  # read from, symlinks followed. The default is the system temp directory and
+  # /tmp. Like allowed_extensions, a list here replaces the default, so name
+  # /tmp again if it should stay. [] turns content_path off.
   # file_upload:
   #   allowed_extensions: [txt, md, pdf, png, jpg, jpeg, gif, svg, html, htm, log, sql, json, yaml, yml, zip, tar, gz]
+  #   content_roots: [/tmp, ~/Dev, ~/Downloads]

@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
-import { readFileSync, statSync } from 'fs';
-import { isAbsolute, resolve } from 'path';
+import { closeSync, constants, fstatSync, openSync, readFileSync, realpathSync } from 'fs';
+import { homedir } from 'os';
+import { basename, isAbsolute, join, sep } from 'path';
 import type { DrushArgs, FileUploadConfig } from '../types.js';
 
 export interface FileUploadInput {
@@ -65,31 +66,97 @@ function decodeBase64(content: string, maxSize: number): Buffer {
   return buf;
 }
 
-function readBufferFromPath(rawPath: string, maxSize: number): Buffer {
+/**
+ * The configured content_roots as real directories: `~` expanded, symlinks
+ * resolved, missing ones dropped. Both sides of the containment check have to
+ * be real paths, or `/tmp/x` would fail against a root that resolved to
+ * `/private/tmp` on macOS.
+ */
+function realRoots(roots: string[]): string[] {
+  const real: string[] = [];
+  for (const root of roots) {
+    const expanded = root === '~' ? homedir() : root.startsWith('~/') ? join(homedir(), root.slice(2)) : root;
+    if (!isAbsolute(expanded)) {
+      throw new FilePreflightError('CONFIG_ERROR', `content_roots entry "${root}" must be an absolute path or start with ~/`);
+    }
+    try {
+      real.push(realpathSync.native(expanded));
+    } catch {
+      // A root that does not exist admits nothing.
+    }
+  }
+  return real;
+}
+
+function isInside(path: string, root: string): boolean {
+  return path === root || path.startsWith(root.endsWith(sep) ? root : root + sep);
+}
+
+/**
+ * Reads a file named by the agent from the machine running this server.
+ *
+ * Before 0.5.1 any absolute path was read, and the extension allowlist looked
+ * at `filename` alone, so `content_path: ~/.ssh/id_rsa, filename: key.txt`
+ * shipped a private key to the site. The path now has to resolve, symlinks
+ * followed, inside one of `content_roots`, and the file it resolves to has to
+ * carry an allowed extension of its own.
+ */
+function readBufferFromPath(rawPath: string, fileConfig: Required<FileUploadConfig>): Buffer {
   if (!isAbsolute(rawPath)) {
     throw new FilePreflightError('PATH_NOT_ABSOLUTE', 'content_path must be an absolute path');
   }
-  const resolved = resolve(rawPath);
 
-  let stat;
+  let real: string;
   try {
-    stat = statSync(resolved);
+    real = realpathSync.native(rawPath);
   } catch (err) {
     throw new FilePreflightError('PATH_NOT_FOUND', `content_path not readable: ${(err as Error).message}`);
   }
-  if (!stat.isFile()) {
-    throw new FilePreflightError('PATH_NOT_FILE', 'content_path is not a regular file');
-  }
-  if (stat.size > maxSize) {
+
+  const roots = realRoots(fileConfig.content_roots);
+  if (!roots.some((root) => isInside(real, root))) {
+    const allowed = fileConfig.content_roots.length > 0 ? fileConfig.content_roots.join(', ') : 'none, content_path is disabled';
     throw new FilePreflightError(
-      'SIZE_EXCEEDED',
-      `file is ${stat.size} bytes, max_size is ${maxSize} bytes`,
+      'PATH_OUTSIDE_ROOTS',
+      `content_path resolves to ${real}, outside the content_roots this site allows (${allowed}). Copy the file into one of them, or add a root under file_upload.content_roots in drush-mcp.yml.`,
     );
   }
-  return readFileSync(resolved);
+
+  // Read through a descriptor opened on the checked path without following a
+  // final symlink, so a link swapped in after the check is refused rather
+  // than read. O_NONBLOCK keeps a FIFO from hanging the open; fstat then
+  // turns it away as not a regular file.
+  let fd: number;
+  try {
+    fd = openSync(real, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
+  } catch (err) {
+    throw new FilePreflightError('PATH_NOT_FOUND', `content_path not readable: ${(err as Error).message}`);
+  }
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) {
+      throw new FilePreflightError('PATH_NOT_FILE', 'content_path is not a regular file');
+    }
+    const ext = extensionOf(basename(real));
+    if (!ext || !fileConfig.allowed_extensions.includes(ext)) {
+      throw new FilePreflightError(
+        'EXTENSION_FORBIDDEN',
+        `content_path resolves to ${real}, whose extension "${ext}" is not in the configured allowlist`,
+      );
+    }
+    if (stat.size > fileConfig.max_size) {
+      throw new FilePreflightError(
+        'SIZE_EXCEEDED',
+        `file is ${stat.size} bytes, max_size is ${fileConfig.max_size} bytes`,
+      );
+    }
+    return readFileSync(fd);
+  } finally {
+    closeSync(fd);
+  }
 }
 
-function readContentBuffer(input: FileUploadInput, maxSize: number): Buffer {
+function readContentBuffer(input: FileUploadInput, fileConfig: Required<FileUploadConfig>): Buffer {
   const hasB64  = typeof input.content_base64 === 'string' && input.content_base64.length > 0;
   const hasPath = typeof input.content_path   === 'string' && input.content_path.length   > 0;
 
@@ -106,9 +173,9 @@ function readContentBuffer(input: FileUploadInput, maxSize: number): Buffer {
     );
   }
   if (hasPath) {
-    return readBufferFromPath(input.content_path!, maxSize);
+    return readBufferFromPath(input.content_path!, fileConfig);
   }
-  return decodeBase64(input.content_base64!, maxSize);
+  return decodeBase64(input.content_base64!, fileConfig.max_size);
 }
 
 export function preflight(input: FileUploadInput, fileConfig: Required<FileUploadConfig>): { buf: Buffer; sha256: string } {
@@ -118,7 +185,7 @@ export function preflight(input: FileUploadInput, fileConfig: Required<FileUploa
   if (input.filename.includes('/') || input.filename.includes('\\')) {
     throw new FilePreflightError('VALIDATION_ERROR', 'filename must not contain path separators');
   }
-  const buf = readContentBuffer(input, fileConfig.max_size);
+  const buf = readContentBuffer(input, fileConfig);
   const ext = extensionOf(input.filename);
   if (!ext) {
     throw new FilePreflightError('EXTENSION_FORBIDDEN', 'filename has no extension');
