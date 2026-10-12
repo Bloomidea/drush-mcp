@@ -351,9 +351,33 @@ describe('content_path roots', () => {
     expect(codeOf({ content_path: join(allowed, 'key.md') }, roots(allowed))).toBe('EXTENSION_FORBIDDEN');
   });
 
-  it('follows a root that is itself a symlink', () => {
+  it('accepts both spellings of a root that is itself a symlink (/tmp and /private/tmp on macOS)', () => {
     expect(codeOf({ content_path: join(allowed, 'ok.md') }, roots(join(tmp, 'link-to-allowed')))).toBe('none');
-    expect(codeOf({ content_path: join(tmp, 'link-to-allowed', 'ok.md') }, roots(allowed))).toBe('none');
+    expect(codeOf({ content_path: join(tmp, 'link-to-allowed', 'ok.md') }, roots(join(tmp, 'link-to-allowed')))).toBe('none');
+  });
+
+  // The path as given is checked before the disk is touched, so a detour
+  // through a symlink that is not a root is refused even when it lands inside
+  // one. Name the file by its real path or by the root's own spelling.
+  it('refuses a path that reaches a root only through another symlink', () => {
+    expect(codeOf({ content_path: join(tmp, 'link-to-allowed', 'ok.md') }, roots(allowed))).toBe('PATH_OUTSIDE_ROOTS');
+  });
+
+  it('says nothing about whether a path outside the roots exists', () => {
+    const missing = codeOf({ content_path: join(outside, 'missing.md') }, roots(allowed));
+    const present = codeOf({ content_path: join(outside, 'secret.md') }, roots(allowed));
+    expect(missing).toBe('PATH_OUTSIDE_ROOTS');
+    expect(present).toBe('PATH_OUTSIDE_ROOTS');
+  });
+
+  it('refuses a scalar where a list of roots belongs', () => {
+    expect(codeOf({ content_path: join(allowed, 'ok.md') }, { ...cfg, content_roots: '/tmp' as unknown as string[] })).toBe('CONFIG_ERROR');
+    expect(codeOf({ content_path: join(allowed, 'ok.md') }, { ...cfg, content_roots: [null] as unknown as string[] })).toBe('CONFIG_ERROR');
+  });
+
+  it('refuses a scalar where a list of extensions belongs', () => {
+    expect(codeOf({ content_path: join(allowed, 'ok.md') }, { ...roots(allowed), allowed_extensions: 'md' as unknown as string[] })).toBe('CONFIG_ERROR');
+    expect(codeOf({ content_base64: b64('x'), filename: 'a.d' }, { ...cfg, allowed_extensions: 'md' as unknown as string[] })).toBe('CONFIG_ERROR');
   });
 
   it('expands ~ in a root to the home directory', () => {

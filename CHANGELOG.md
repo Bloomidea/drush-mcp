@@ -22,20 +22,27 @@ Security fixes. Upgrade every installation.
 - **`content_path` read any file on the machine running the server.** Any
   absolute path was accepted, and the extension allowlist checked `filename`
   only, so `content_path: ~/.ssh/id_rsa` with `filename: key.txt` uploaded a
-  private key to the site. The path must now resolve, symlinks followed,
-  inside a configured root, and the file it resolves to must carry an allowed
-  extension of its own.
+  private key to the site. The path must now sit inside a configured root as
+  written and once symlinks are resolved, the file it resolves to must carry
+  an allowed extension of its own, and nothing outside the roots is touched,
+  so the error does not reveal whether a file exists there.
+- A scalar `content_roots` or `allowed_extensions` in `drush-mcp.yml` is now
+  a `CONFIG_ERROR`. Before, `allowed_extensions: pdf` matched any extension
+  that is a substring of `pdf`.
 
 ### Changed defaults
 
 - **`file_upload.content_roots`**, new, defaults to the system temp directory
   and `/tmp`. A `content_path` elsewhere fails with `PATH_OUTSIDE_ROOTS`.
-  To keep 0.5.0's behaviour, set `content_roots: [/]` under
-  `defaults.file_upload` or the site's `file_upload`. Better: list the
-  folders agents actually upload from (`[/tmp, ~/Dev]`).
+  So does a path that reaches a root only through some other symlink: name
+  the file by its real path or by the root's own spelling. To keep 0.5.0's
+  reach, set `content_roots: [/]` under `defaults.file_upload` or the site's
+  `file_upload` (the extension of the real file is checked either way).
+  Better: list the folders agents actually upload from (`[/tmp, ~/Dev]`).
 - **The `drush` setting is read as plain words.** A wrapper such as
   `php -d memory_limit=-1 vendor/bin/drush` still works; `~`, `$VAR` and other
-  shell syntax in it no longer expand. Write the path out in full.
+  shell syntax in it no longer expand, and a path containing a space no
+  longer works. Write the path out in full, without spaces (a symlink helps).
 - **`drupal_drush` takes a bare command name.** A `command` that carried
   options or a site alias (`"status --format=json"`, `"@prod status"`) is now
   refused; pass options in `arguments`. There is no switch back: the

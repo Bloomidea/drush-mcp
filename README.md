@@ -149,11 +149,12 @@ sites:
 ```
 
 `content_roots` lists the local directories `content_path` may read from, on
-the machine running the MCP server. A path is accepted only when it resolves,
-symlinks and `..` followed, inside one of them, and the file it resolves to
-must itself carry an allowed extension: naming a key `key.txt` in `filename`
-no longer gets `~/.ssh/id_rsa` through. Entries are absolute or start with
-`~/`; a root that does not exist is skipped. The default is the system temp
+the machine running the MCP server. A path is accepted only when it sits inside
+one of them both as written and once symlinks and `..` are resolved, and the
+file it resolves to must itself carry an allowed extension: naming a key
+`key.txt` in `filename` no longer gets `~/.ssh/id_rsa` through. A root that is
+a symlink (`/tmp` on macOS) matches under either spelling. Entries are absolute
+or start with `~/`; a root that does not exist is skipped. The default is the system temp
 directory and `/tmp`, so the usual flow (write or resize the file into `/tmp`,
 then upload it) keeps working. Add a project or documents folder when agents
 should upload from there, set `[]` to turn `content_path` off, or set `[/]` to
