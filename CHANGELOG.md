@@ -35,7 +35,8 @@ Security fixes. Upgrade every installation.
 - **`file_upload.content_roots`**, new, defaults to the system temp directory
   and `/tmp`. A `content_path` elsewhere fails with `PATH_OUTSIDE_ROOTS`.
   So does a path that reaches a root only through some other symlink: name
-  the file by its real path or by the root's own spelling. To keep 0.5.0's
+  the file by its real path or by the root's own spelling. A path with `.` or
+  `..` segments fails with `PATH_NOT_ABSOLUTE`. To keep 0.5.0's
   reach, set `content_roots: [/]` under `defaults.file_upload` or the site's
   `file_upload` (the extension of the real file is checked either way).
   Better: list the folders agents actually upload from (`[/tmp, ~/Dev]`).

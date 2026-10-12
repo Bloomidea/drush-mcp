@@ -128,6 +128,12 @@ function readBufferFromPath(rawPath: string, fileConfig: Required<FileUploadConf
   if (!isAbsolute(rawPath)) {
     throw new FilePreflightError('PATH_NOT_ABSOLUTE', 'content_path must be an absolute path');
   }
+  // resolve() collapses `link/..` lexically while the kernel walks through
+  // the link first, so the lexical check below would vouch for a path the
+  // open() then follows elsewhere. Nobody needs these segments; refuse them.
+  if (rawPath.split(/[\\/]/).some((segment) => segment === '.' || segment === '..')) {
+    throw new FilePreflightError('PATH_NOT_ABSOLUTE', 'content_path must not contain . or .. segments');
+  }
   const roots = rootSpellings(fileConfig.content_roots);
   if (!roots.some((root) => isInside(resolve(rawPath), root))) {
     throw outsideRoots(fileConfig);

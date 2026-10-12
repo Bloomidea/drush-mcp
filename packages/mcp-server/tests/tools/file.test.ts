@@ -335,8 +335,11 @@ describe('content_path roots', () => {
     expect(codeOf({ content_path: join(outside, 'secret.md') }, roots(allowed))).toBe('PATH_OUTSIDE_ROOTS');
   });
 
-  it('refuses a path that climbs out of the root with ..', () => {
-    expect(codeOf({ content_path: `${allowed}/../allowed-not/secret.md` }, roots(allowed))).toBe('PATH_OUTSIDE_ROOTS');
+  it('refuses . and .. segments, which the lexical check and the kernel read differently', () => {
+    expect(codeOf({ content_path: `${allowed}/../allowed-not/secret.md` }, roots(allowed))).toBe('PATH_NOT_ABSOLUTE');
+    expect(codeOf({ content_path: `${allowed}/./ok.md` }, roots(allowed))).toBe('PATH_NOT_ABSOLUTE');
+    // escape.md links outside; escape.md/.. would be read lexically as `allowed`.
+    expect(codeOf({ content_path: `${allowed}/escape.md/../ok.md` }, roots(allowed))).toBe('PATH_NOT_ABSOLUTE');
   });
 
   it('refuses a symlink inside the root that points outside it', () => {

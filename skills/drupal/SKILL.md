@@ -267,7 +267,7 @@ Default `mode` is `append` (adds to the existing list, respecting cardinality). 
 | Code | Cause |
 |---|---|
 | `VALIDATION_ERROR` | Both `content_base64` and `content_path` provided, or neither |
-| `PATH_NOT_ABSOLUTE` | `content_path` is not an absolute path |
+| `PATH_NOT_ABSOLUTE` | `content_path` is not an absolute path, or contains `.` or `..` segments |
 | `PATH_NOT_FOUND` | `content_path` does not exist or is not readable by the MCP server process |
 | `PATH_NOT_FILE` | `content_path` points to a directory or non-regular file |
 | `PATH_OUTSIDE_ROOTS` | `content_path` resolves outside the site's `content_roots`; copy the file into `/tmp` first |
