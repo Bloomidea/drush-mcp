@@ -5,6 +5,7 @@ export interface TransportResult {
 }
 
 import { tmpdir } from 'os';
+import type { ToolsConfig } from './policy.js';
 
 export interface FileUploadConfig {
   max_size?: number;
@@ -27,6 +28,8 @@ export interface SiteConfig {
   uri?: string;
   timeout?: number;
   file_upload?: FileUploadConfig;
+  tools?: ToolsConfig;
+  run_as?: number;
 }
 
 export const FILE_UPLOAD_DEFAULTS: Required<FileUploadConfig> = {
@@ -69,6 +72,9 @@ export interface DrushMcpConfig {
     timeout?: number;
     drush?: string;
     file_upload?: FileUploadConfig;
+    tools?: ToolsConfig;
+    run_as?: number;
+    audit_log?: string | false;
   };
 }
 

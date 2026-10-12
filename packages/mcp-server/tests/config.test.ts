@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { configPathFromArgs, loadConfigFile, mergeConfig, parseCliArgs, resolveTransportType } from '../src/config.js';
+import { applyCliOverrides, configPathFromArgs, loadConfigFile, mergeConfig, parseCliArgs, resolveTransportType } from '../src/config.js';
 
 describe('parseCliArgs', () => {
   it('parses --local --command into local transport config', () => {
@@ -157,5 +157,37 @@ describe('mergeConfig', () => {
     // The site the flags built has no file_upload of its own, so defaults is
     // the only route an upload policy has into a flag-configured server.
     expect(merged.defaults?.file_upload?.allowed_extensions).toEqual(['md', 'html']);
+  });
+});
+
+describe('applyCliOverrides', () => {
+  const twoSites = () => ({
+    sites: {
+      prod:    { name: 'prod', transport: 'ssh' as const, tools: { profile: 'full', allow: ['drupal_php_eval'] }, run_as: 1 },
+      staging: { name: 'staging', transport: 'ssh' as const },
+    },
+  });
+
+  it('puts --profile on every site, replacing its whole tools block', () => {
+    const config = applyCliOverrides(twoSites(), ['--config', 'x.yml', '--profile', 'read-only']);
+    expect(config.sites.prod.tools).toEqual({ profile: 'read-only' });
+    expect(config.sites.staging.tools).toEqual({ profile: 'read-only' });
+  });
+
+  it('puts --run-as on every site', () => {
+    const config = applyCliOverrides(twoSites(), ['--run-as', '4']);
+    expect(config.sites.prod.run_as).toBe(4);
+    expect(config.sites.staging.run_as).toBe(4);
+  });
+
+  it('leaves the sites alone without the flags', () => {
+    const config = applyCliOverrides(twoSites(), ['--config', 'x.yml']);
+    expect(config.sites.prod.tools).toEqual({ profile: 'full', allow: ['drupal_php_eval'] });
+    expect(config.sites.prod.run_as).toBe(1);
+  });
+
+  it('refuses a flag without a value', () => {
+    expect(() => applyCliOverrides(twoSites(), ['--profile'])).toThrow(/need a value/);
+    expect(() => applyCliOverrides(twoSites(), ['--run-as', '--docker'])).toThrow(/need a value/);
   });
 });

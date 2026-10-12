@@ -1,5 +1,6 @@
 import type { DrushMcpConfig, FileUploadConfig, SiteConfig } from './types.js';
 import { resolveFileUploadConfig } from './types.js';
+import { resolveToolPolicy, type ToolPolicy } from './policy.js';
 import type { BaseTransport } from './transport/base.js';
 import { LocalTransport } from './transport/local.js';
 import { SshTransport } from './transport/ssh.js';
@@ -90,5 +91,22 @@ export class SiteManager {
    */
   getFileUploadConfig(siteName: string): Required<FileUploadConfig> {
     return resolveFileUploadConfig(this.getSite(siteName), this.config.defaults?.file_upload);
+  }
+
+  /** The tools this site exposes; see policy.ts. */
+  getToolPolicy(siteName: string): ToolPolicy {
+    return resolveToolPolicy(this.getSite(siteName).tools, this.config.defaults?.tools, `site '${siteName}'`);
+  }
+
+  /**
+   * The account bridge commands run as when the agent names none, or
+   * undefined for anonymous. Before 0.6.0 that fallback was uid 1.
+   */
+  getRunAs(siteName: string): number | undefined {
+    const runAs = this.getSite(siteName).run_as ?? this.config.defaults?.run_as;
+    if (runAs !== undefined && !(Number.isInteger(runAs) && runAs >= 0)) {
+      throw new Error(`site '${siteName}': run_as must be a Drupal user ID (a whole number, 0 for anonymous), got ${JSON.stringify(runAs)}.`);
+    }
+    return runAs;
   }
 }

@@ -62,6 +62,31 @@ export function parseCliArgs(args: string[]): DrushMcpConfig | null {
   return { sites: { default: site } };
 }
 
+/**
+ * Applies --profile and --run-as to every site, over the config file.
+ *
+ * They are the strongest setting on purpose: a server started with
+ * `--profile read-only` is read-only whatever a site block says, and the flag
+ * replaces the site's whole `tools` block, allow and deny lists included.
+ * They are also the only route to a per-server policy for a server whose site
+ * comes from flags, since such a server sees only the file's `defaults`.
+ */
+export function applyCliOverrides(config: DrushMcpConfig, args: string[]): DrushMcpConfig {
+  const flags = parseFlags(args);
+  if (flags.profile === true || flags['run-as'] === true) {
+    throw new Error('--profile and --run-as need a value.');
+  }
+  for (const site of Object.values(config.sites)) {
+    if (typeof flags.profile === 'string') {
+      site.tools = { profile: flags.profile };
+    }
+    if (typeof flags['run-as'] === 'string') {
+      site.run_as = Number(flags['run-as']);
+    }
+  }
+  return config;
+}
+
 export function loadConfigFile(path?: string): DrushMcpConfig | null {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? '~';
   const candidates = path

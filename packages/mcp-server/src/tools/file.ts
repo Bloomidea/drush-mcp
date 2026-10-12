@@ -11,6 +11,8 @@ export interface FileUploadInput {
   scheme?:         'public' | 'private' | 'temporary';
   destination?:    string;
   uid?:            number;
+  /** The account the bridge acts as, when it is not the owner in `uid`. */
+  user?:           number;
 }
 
 export interface FileAttachInput extends FileUploadInput {
@@ -258,6 +260,10 @@ function commonArgs(input: FileUploadInput, fileConfig: Required<FileUploadConfi
   // target field's uri_scheme (attach) or the site's default scheme (upload),
   // which is what Drupal's own upload widget would do.
   if (input.scheme !== undefined) args.push(`--scheme=${input.scheme}`);
+  // The bridge acts as the owner when --user is absent, so it is sent only
+  // when the two differ; a 0.5.x bridge, which has no --user, keeps working
+  // for every call that names its own uid.
+  if (input.user !== undefined && input.user !== uid) args.push(`--user=${input.user}`);
   return args;
 }
 

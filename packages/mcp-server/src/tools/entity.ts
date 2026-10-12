@@ -1,4 +1,5 @@
 import type { DrushArgs } from '../types.js';
+import { positional } from './args.js';
 
 export function buildEntityCreateArgs(input: { entity_type: string; bundle: string; fields: Record<string, unknown>; user?: number }): DrushArgs {
   const args = [`--type=${input.entity_type}`, `--bundle=${input.bundle}`, `--fields=${JSON.stringify(input.fields)}`];
@@ -26,5 +27,5 @@ export function buildEntityListArgs(input: { entity_type: string; bundle?: strin
   return { command: 'mcp:entity-list', jsonFormat: false, args };
 }
 export function buildEntityDeleteArgs(input: { entity_type: string; id: number }): DrushArgs {
-  return { command: 'entity:delete', jsonFormat: false, args: [input.entity_type, String(input.id), '-y'] };
+  return { command: 'entity:delete', jsonFormat: false, args: [positional(input.entity_type, 'entity_type'), String(input.id), '-y'] };
 }
