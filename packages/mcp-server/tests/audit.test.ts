@@ -61,6 +61,18 @@ describe('summarizeCall', () => {
       .toEqual({ command: 'config:set', arguments: ['smtp.settings', 'smtp_password', '[redacted]', '-y'] });
   });
 
+  it('redacts a credential option given as two arguments', () => {
+    expect(summarizeCall('drupal_drush', { command: 'user:create', arguments: ['bob', '--password', 'hunter2', '--mail', 'b@x.pt'] }))
+      .toEqual({ command: 'user:create', arguments: ['bob', '--password', '[redacted]', '--mail', 'b@x.pt'] });
+  });
+
+  it('redacts the password inside a URL, whatever the option is called', () => {
+    expect(summarizeCall('drupal_drush', { command: 'sql:sync', arguments: ['--db-url=mysql://drupal:hunter2@db:3306/site'] }))
+      .toEqual({ command: 'sql:sync', arguments: ['--db-url=mysql://drupal:[redacted]@db:3306/site'] });
+    expect(summarizeArgs({ value: 'see https://example.com/path and ftp://u:p@h/x' }))
+      .toEqual({ value: 'see https://example.com/path and ftp://u:[redacted]@h/x' });
+  });
+
   it('finds secrets inside fields sent as a JSON string', () => {
     const out = summarizeCall('drupal_entity_create', { entity_type: 'user', fields: '{"name":"bob","pass":"hunter2"}' });
     expect(JSON.stringify(out)).not.toContain('hunter2');

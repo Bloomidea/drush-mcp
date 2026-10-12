@@ -55,9 +55,12 @@ export function summarizeArgs(value: unknown, key = ''): unknown {
     return { sha256: sha256(value), length: value.length };
   }
   if (typeof value === 'string') {
-    return value.length > MAX_STRING
-      ? { head: value.slice(0, HEAD), length: value.length, sha256: sha256(value) }
-      : value;
+    // A password inside a URL (`mysql://user:pass@host/db`) hides behind
+    // whatever the option or field is called.
+    const clean = value.replace(/(\/\/[^/\s:@]*):[^/\s@]*@/g, `$1:${REDACTED}@`);
+    return clean.length > MAX_STRING
+      ? { head: clean.slice(0, HEAD), length: value.length, sha256: sha256(value) }
+      : clean;
   }
   if (Array.isArray(value)) {
     return value.map((item) => summarizeArgs(item));
@@ -68,11 +71,22 @@ export function summarizeArgs(value: unknown, key = ''): unknown {
   return value;
 }
 
-/** `--name=value` with a credential-shaped name keeps the name only. */
-function redactOption(arg: unknown): unknown {
-  if (typeof arg !== 'string') return arg;
-  const option = /^(--?[^=]+)=/.exec(arg);
-  return option && SECRET_NAME.test(option[1].replace(/^-+/, '')) ? `${option[1]}=${REDACTED}` : arg;
+const isSecretOption = (name: string): boolean => SECRET_NAME.test(name.replace(/^-+/, ''));
+
+/**
+ * Credential options keep their name only, in both spellings: `--password=x`
+ * as one argument, and `--password x` as two.
+ */
+function redactOptions(args: unknown[]): unknown[] {
+  return args.map((arg, i) => {
+    const previous = args[i - 1];
+    if (typeof previous === 'string' && /^--?[^=]+$/.test(previous) && isSecretOption(previous)) {
+      return REDACTED;
+    }
+    if (typeof arg !== 'string') return arg;
+    const option = /^(--?[^=]+)=/.exec(arg);
+    return option && isSecretOption(option[1]) ? `${option[1]}=${REDACTED}` : arg;
+  });
 }
 
 /**
@@ -99,7 +113,7 @@ export function summarizeCall(tool: string, input: Record<string, unknown>): unk
   }
   if (tool === 'drupal_drush' && Array.isArray(args.arguments)) {
     const command   = String(input.command);
-    let   arguments_ = args.arguments.map(redactOption);
+    let   arguments_ = redactOptions(args.arguments);
     if (['user:password', 'user-password', 'upwd'].includes(command)) {
       arguments_ = arguments_.map((arg, i) => (i === 0 ? arg : REDACTED));
     }
