@@ -57,9 +57,24 @@ sites:
   #     destination_prefix: mcp-uploads   # default; files land in <scheme>://<prefix>/<UTC YYYY-MM>/
   #     content_roots: [/tmp, ~/Dev]      # local dirs content_path may read from; default: system temp dir and /tmp
 
+  # Tools and acting account (per site, or under defaults)
+  # production:
+  #   ...
+  #   run_as: 12                  # Drupal account bridge commands act as when the agent names none; default anonymous
+  #   tools:
+  #     profile: content          # read-only | content | full (default)
+  #     allow: [drupal_watchdog]  # added to the profile
+  #     deny: [drupal_entity_create]  # removed from it
+  # On read-only and content the agent may not name an account other than
+  # run_as. --profile and --run-as on the command line override every site.
+
 defaults:
   timeout: 30
   # drush: vendor/bin/drush
+
+  # One JSON line per tool call. Default ~/.drush-mcp/audit.jsonl; false
+  # turns it off.
+  # audit_log: ~/.drush-mcp/audit.jsonl
 
   # The same file_upload block, for every site that does not set its own. This
   # is the only route into a server started from CLI flags: flags discard the

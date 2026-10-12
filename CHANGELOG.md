@@ -6,6 +6,52 @@ in the [GitHub Releases](https://github.com/Bloomidea/drush-mcp/releases).
 
 Every change to a default says how to get the previous behaviour back.
 
+## 0.6.0
+
+Upgrade the npm package and the Composer bridge together: the bridge's new
+access checks and the server's `run_as` meet in the middle.
+
+### Added
+
+- **Tool profiles.** `tools: { profile, allow, deny }` per site or under
+  `defaults`, and `--profile` on the command line. `read-only` and `content`
+  expose only the bridge commands, which go through Drupal's access checks,
+  plus `drupal_status` and `drupal_field_info`; `full` exposes all 19.
+- **`run_as`**, per site or under `defaults`, and `--run-as` on the command
+  line: the Drupal account bridge commands act as when the agent names none.
+  On `read-only` and `content` the agent may not name any other account.
+- **Audit log.** One JSON line per tool call in `~/.drush-mcp/audit.jsonl`,
+  with secrets redacted and file bytes reduced to a hash.
+- `tests/functional/access.sh` in the bridge package checks the access rules
+  against a disposable Drupal site.
+
+### Changed defaults
+
+- **The bridge acts as anonymous when no account is named**, where it acted
+  as uid 1. Calls that relied on the admin fallback now answer
+  `access_denied`. Keep the old behaviour with `run_as: 1` (under `defaults`
+  or per site, or `--run-as 1`); better, name the account the agent should
+  have.
+- **Bridge commands apply Drupal's access checks** for the acting account:
+  create, view and update access on the entity, view access on each field
+  returned (no more `pass` hashes or other users' `mail`), edit access on
+  every field whose value changes (a value equal to what the entity would get
+  anyway needs none, as in core's REST), and update access on the entity a
+  file is attached to. `drupal_entity_list` drops entities the account may
+  not view. There is no switch to turn this off; an account with the right
+  permissions, or uid 1 as `run_as`, gets the old results.
+- **The audit log is on.** Turn it off with `defaults.audit_log: false`.
+- The file commands take `--user`, the acting account, apart from `--uid`,
+  the owner. Without `--user` they act as the owner, as before, and fall back
+  to anonymous instead of uid 1 when there is no owner.
+
+### Fixed
+
+- `drupal_config_get`, `drupal_config_set`, `drupal_user_create`,
+  `drupal_user_block` and `drupal_entity_delete` refuse a positional value
+  starting with `-`, which Drush read as an option (`--include` loads code
+  from a directory, `--root` and `--uri` switch sites).
+
 ## 0.5.1
 
 Security fixes. Upgrade every installation.

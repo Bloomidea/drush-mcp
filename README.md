@@ -88,6 +88,8 @@ defaults:
   timeout: 30
 ```
 
+Each site also takes `tools`, `run_as` and `file_upload`, and `defaults` takes the same three plus `audit_log`; see [Security](#security) and [File upload settings](#file-upload-settings).
+
 ### Drush Site Aliases
 
 If your project already uses [Drush site aliases](https://www.drush.org/13.x/site-aliases/) (`drush/sites/self.site.yml`), the fields map directly to `drush-mcp.yml`:
@@ -248,7 +250,7 @@ If your Drupal site runs on [Coolify](https://coolify.io/):
 
 ## Tools
 
-All 19 tools are available regardless of transport:
+All 19 tools work on every transport. Which of them a site exposes is its tools profile's call; see [Security](#security).
 
 | Tool | Description |
 |------|-------------|
@@ -292,6 +294,8 @@ The `bloomidea/drush-mcp-bridge` Composer package provides structured entity com
 
 Install via Composer and Drush picks them up automatically - no additional registration needed.
 
+Each command acts as the account in `--user` (default: anonymous; uid 1 before 0.6.0) and applies Drupal's access checks for it, as described under [The acting account](#the-acting-account). The file commands act as `--user` when given, else as the file's owner in `--uid`. `tests/functional/` in the bridge package checks this against a disposable site.
+
 **Important:** The bridge command class file must be named `*DrushCommands.php` (not `*Commands.php`) for Drush 12's PSR-4 discovery. The class also provides a static `create()` factory method for dependency injection from Drupal's service container.
 
 ## How is this different from the Drupal MCP Server module?
@@ -317,9 +321,54 @@ drush-mcp runs **outside** Drupal as a standalone TypeScript process that execut
 
 ## Security
 
-There are no artificial capability tiers. If you have Drush access to a site, you have access to all tools.
+The server can do whatever its transport lets it do: an SSH key, the Docker socket or a local process reaches the whole site. An agent, in turn, can be steered by anything it reads, a comment or a web page included. The settings below bound what an agent does with that reach and record what it did.
 
-The security boundary is transport access: SSH keys, Docker socket permissions, or local process access. Bridge commands (`mcp:entity-*`) enforce Drupal's entity access checks. Power tools (`drupal_drush`, `drupal_php_eval`, `drupal_sql_query`) do not - treat them accordingly.
+### Tool profiles
+
+Each site exposes one profile, optionally adjusted with `allow` and `deny`:
+
+| Profile | Tools |
+|---------|-------|
+| `read-only` | `drupal_entity_read`, `drupal_entity_list`, `drupal_introspect`, `drupal_field_info`, `drupal_status` |
+| `content` | `read-only`, plus `drupal_entity_create`, `drupal_entity_update`, `drupal_file_attach` |
+| `full` (default) | all 19 |
+
+The restricted profiles hold only the bridge commands, which go through Drupal's access checks, plus two that read structure and status. Everything that runs as the Drush superuser (config, logs, users, deletes, cache, file upload without a target, raw Drush, PHP, SQL) is `full` only; name it in `allow` to add it anyway.
+
+```yaml
+sites:
+  production:
+    transport: ssh
+    host: example.com
+    user: deploy
+    root: /var/www/html
+    run_as: 12                 # the agent's own Drupal account
+    tools:
+      profile: content
+      allow: [drupal_watchdog]
+```
+
+`tools` and `run_as` are accepted per site and under `defaults`; a site's own `tools` block replaces the default one whole. `--profile <name>` and `--run-as <uid>` on the command line apply to every site and win over the file. An unknown profile or tool name stops the server at startup. A tool that no site exposes is not listed at all; one that another site exposes answers `tool_disabled`.
+
+### The acting account
+
+Bridge commands act as one Drupal account and apply its permissions: create, view and update access on the entity, view access on every field returned (a user's `pass` and another user's `mail` never come back), edit access on every field whose value changes, and update access on the entity a file is attached to. `drupal_entity_list` drops entities the account may not view, so a page can come back shorter than `limit`.
+
+The account is the `user` (or, for the file tools, `uid`) the agent names, else the site's `run_as`, else anonymous. Before 0.6.0 the fallback was uid 1. On the `read-only` and `content` profiles the agent may not name any account other than `run_as`, so the checks stay the operator's; on `full`, which already has `drupal_php_eval`, it may.
+
+`drupal_file_upload` writes a managed file with no entity to check against, and the tools outside the bridge run as the Drush superuser. That is why neither is in a restricted profile.
+
+### Audit log
+
+Every tool call appends one JSON line to `~/.drush-mcp/audit.jsonl`: time, site, tool, arguments, outcome (`ok`, `error` or `refused`), error code, exit code and duration. Passwords are redacted, `content_base64` is reduced to a hash and a length, and strings over 500 characters keep their first 200 plus a hash. The file is created `0600` in a `0700` directory and only ever appended to. Set `defaults.audit_log` to another path, or to `false` to turn it off.
+
+```json
+{"time":"2026-10-12T12:20:03.114Z","site":"production","tool":"drupal_entity_update","args":{"entity_type":"node","id":1,"fields":{"title":"New title"}},"outcome":"ok","exit_code":0,"duration_ms":1843}
+```
+
+### Local files
+
+`content_path` reads only from `file_upload.content_roots`; see [File upload settings](#file-upload-settings).
 
 ## License
 

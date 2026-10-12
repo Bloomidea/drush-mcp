@@ -21,6 +21,8 @@ The MCP server does not call Drupal directly. Each tool flows through three laye
 
 Power tools (`drupal_drush`, `drupal_php_eval`, `drupal_sql_query`) skip the bridge and run raw Drush.
 
+Every tool is registered through `register()` in `packages/mcp-server/src/server.ts`, which applies the site's tool profile (`src/policy.ts`), resolves the acting account (`run_as`, pinned on restricted profiles) and appends the audit line (`src/audit.ts`). `src/index.ts` only parses the command line and connects stdio; tests drive `createServer()` through the SDK's in-memory transport (`tests/server.test.ts`).
+
 ## Naming conventions
 
 - MCP tool names: `drupal_<area>_<verb>` (e.g. `drupal_entity_create`, `drupal_user_block`).
@@ -30,11 +32,12 @@ Power tools (`drupal_drush`, `drupal_php_eval`, `drupal_sql_query`) skip the bri
 
 ## When adding a tool
 
-1. Add the builder in `packages/mcp-server/src/tools/<area>.ts`.
-2. Register it in `packages/mcp-server/src/index.ts` with a Zod schema and a description (the description is what agents see — be precise).
-3. If structured I/O is needed, add the matching `mcp:<area>-<verb>` Drush command in `McpBridgeDrushCommands.php` returning JSON.
-4. Add a Vitest unit test for the builder. Functional/Drupal-side tests live with the bridge.
-5. Update the tools table in `README.md`. If the change is user-visible, also update `skills/drupal/SKILL.md`.
+1. Add the builder in `packages/mcp-server/src/tools/<area>.ts`. A value the agent supplies for a positional Drush argument goes through `positional()` (`tools/args.ts`); `--name=value` options need nothing.
+2. Add the name to `TOOL_NAMES` in `src/policy.ts` and decide its profile: only a bridge command that applies Drupal access checks belongs in `read-only` or `content`; anything that runs as the Drush superuser is `full` only.
+3. Register it with `register()` in `packages/mcp-server/src/server.ts`, with a Zod schema and a description (the description is what agents see — be precise).
+4. If structured I/O is needed, add the matching `mcp:<area>-<verb>` Drush command in `McpBridgeDrushCommands.php` returning JSON. It acts as `--user` (default anonymous) and checks entity and field access for that account; extend `packages/drush-mcp-bridge/tests/functional/access.sh` when it does something new.
+5. Add a Vitest unit test for the builder. Functional/Drupal-side tests live with the bridge.
+6. Update the tools table in `README.md`, and the profile table under Security if the tool is in one. If the change is user-visible, also update `skills/drupal/SKILL.md`.
 
 ## Transport limits to remember
 
@@ -116,6 +119,7 @@ PHP unit/functional tests run inside a real Drupal site that has the bridge inst
 
 - The bridge is a Drush package (`type: drupal-drush`), not a Drupal module. Service registration goes in `drush.services.yml`, not `*.services.yml`.
 - `entity:delete` is a stock Drush command; the project deliberately reuses it instead of shipping `mcp:entity-delete` (see `buildEntityDeleteArgs` in `tools/entity.ts`). Keep that pattern unless a reason to diverge appears.
-- `siteParam` in `index.ts` is a Zod helper for the per-tool `site` argument that selects which configured site to target — every new tool must accept it.
+- `siteParam` in `server.ts` is a Zod helper for the per-tool `site` argument that selects which configured site to target — every new tool must accept it.
 - CLI flags and `drush-mcp.yml` do not merge per site: `parseCliArgs` returns `null` only when no site flag is given, and only then does `mergeConfig` use the file's `sites:`. A server started with `--docker --host ...` therefore never sees a site's `file_upload` from the YAML, only `defaults:`, which `mergeConfig` keeps in both branches. That is why `file_upload` is accepted under `defaults` as of 0.5.0: it is the one route an upload policy has into a flag-configured server, and `SiteManager.getFileUploadConfig()` folds it in the same way `getTransport()` already folds `defaults.timeout` and `defaults.drush`. Before 0.4.0 the file was never used at all (and `--config` was ignored).
+- The file commands have two accounts: `--uid` is the owner and `--user` the acting account. The bridge acts as `--uid` when `--user` is absent, and `commonArgs` in `tools/file.ts` sends `--user` only when the two differ, so a 0.6 server still works with a 0.5 bridge for any call that names its own `uid`. Keep both halves of that.
 - The bridge decides the upload scheme, not the TS side: `commonArgs` in `tools/file.ts` forwards `--scheme` only when the agent set it, and `mcp:file-attach` falls back to the field's `uri_scheme`, `mcp:file-upload` to `system.file default_scheme`. Do not reintroduce a `public` default in TypeScript; on private-files sites it silently exposes uploads.

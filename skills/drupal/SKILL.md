@@ -1,6 +1,6 @@
 ---
 name: drupal
-version: 1.3.0
+version: 1.4.0
 description: >-
   Drupal site management: create, read, update, delete, and query entities,
   upload and attach files to fields, introspect field schemas, manage
@@ -24,12 +24,15 @@ MCP server for Drupal via Drush. Connects to any Drupal 10+/11+ site over local 
 ## Rules of Engagement
 
 - **Introspect before creating:** Always call `drupal_introspect` with `entity_type` and `bundle` before creating or updating entities. This returns required fields, field types, allowed values for taxonomy references, and list field options. Never guess field values.
-- **Use the `user` parameter:** Bridge tools (`drupal_entity_create`, `drupal_entity_read`, `drupal_entity_update`, `drupal_entity_list`, `drupal_introspect`) run as anonymous by default on the Drush side. Pass `user` (a Drupal user ID) to run with that user's permissions. Default is uid 1 (admin). Use a specific user when access checks matter (e.g., creating comments, referencing access-controlled entities).
+- **Use the `user` parameter:** Bridge tools (`drupal_entity_create`, `drupal_entity_read`, `drupal_entity_update`, `drupal_entity_list`, `drupal_introspect`, and `uid` on the file tools) act as one Drupal account and apply its access checks: entity create, view and update access, field view access on what comes back, and edit access on every field whose value changes. Pass `user` to act as a given account. Without it the site's `run_as` applies, and without that, anonymous; before 0.6.0 the fallback was uid 1, so a call that used to work without `user` may now answer `access_denied`. Pass the account whose permissions the work should have, not uid 1.
+- **Read refusals as answers, not glitches:** `access_denied` means Drupal refused the acting account (the message carries Drupal's reason). `user_not_allowed` means the site runs on the `read-only` or `content` tools profile and pins the account to its `run_as`; `tool_disabled` means the site switched that tool off. Report these to the user; do not retry as another account or route around them with `drupal_php_eval`.
 - **Confirm before destructive operations:** `drupal_entity_delete`, `drupal_config_set`, `drupal_php_eval`, and `drupal_sql_query` modify data. Always confirm with the user before executing.
 - **Multi-site:** When multiple Drupal sites are configured, every tool accepts a `site` parameter. With a single site, it resolves automatically.
 - **Drush site aliases:** If the project has a `drush/sites/self.site.yml` file, its entries (`host`, `user`, `root`, `uri`) map directly to `drush-mcp.yml` site config. Useful for discovering connection details when setting up new sites.
 
 ## Tools
+
+A site may expose fewer tools than listed here. Its tools profile decides: `read-only` keeps entity read and list, introspect, field info and status; `content` adds entity create and update and file attach; `full` (the default) has all of them. A tool missing from the tool list is switched off on purpose.
 
 ### Entity Operations (bridge commands)
 
@@ -276,6 +279,7 @@ Default `mode` is `append` (adds to the existing list, respecting cardinality). 
 | `SIZE_EXCEEDED` | Larger than `max_size`, the field's `max_filesize`, or PHP `upload_max_filesize`/`post_max_size` |
 | `INVALID_SCHEME` / `INVALID_DESTINATION` | Bad scheme or path traversal attempt on the *destination* (inside Drupal) |
 | `ENTITY_NOT_FOUND` / `FIELD_INVALID` | Target entity doesn't exist or field isn't a `file`/`image` type |
+| `ACCESS_DENIED` | The acting account (`uid`, else the site's `run_as`, else anonymous) may not update the target entity or edit the field |
 | `CARDINALITY_EXCEEDED` | `mode=append` against a full single-cardinality field — use `mode=replace` |
 
 **URL in response:** `url` is `null` for `private`/`temporary` schemes, and also `null` when the site has no `uri` configured in `drush-mcp.yml` (because drush running in CLI without `--uri` can't build a real public URL). The `uri` field (e.g. `public://mcp-uploads/2026-05/foo.md`) is always populated and is what you should pass back to other Drupal calls.
