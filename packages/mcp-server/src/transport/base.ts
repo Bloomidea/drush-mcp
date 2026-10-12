@@ -15,6 +15,24 @@ export interface BuildOptions {
   stdin?: boolean;
 }
 
+/**
+ * The shape of a Drush command name: `cr`, `cache:rebuild`, `mcp:entity-create`.
+ *
+ * The name is the one value every tool hands a transport outside the argument
+ * list, and `drupal_drush` takes it straight from the agent. Before 0.5.1 the
+ * ssh and docker transports spliced it unquoted into the remote command line,
+ * so `status; id` ran `id` on the host, outside the container. Quoting closes
+ * that; this check also keeps the name from being read as a Drush option
+ * (`--root=...`), which quoting cannot.
+ */
+export const DRUSH_COMMAND_NAME = /^[A-Za-z0-9][A-Za-z0-9:_.-]*$/;
+
+export function assertDrushCommandName(name: string): void {
+  if (!DRUSH_COMMAND_NAME.test(name)) {
+    throw new Error(`${JSON.stringify(name)} is not a valid Drush command name. Pass options and arguments separately, not in the command.`);
+  }
+}
+
 export abstract class BaseTransport {
   constructor(protected config: TransportConfig) {}
 

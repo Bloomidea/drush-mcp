@@ -1,4 +1,4 @@
-import { BaseTransport, type TransportConfig, type CommandParts, type BuildOptions } from './base.js';
+import { BaseTransport, assertDrushCommandName, type TransportConfig, type CommandParts, type BuildOptions } from './base.js';
 
 export interface LocalTransportConfig extends TransportConfig {
   command: string;
@@ -14,6 +14,9 @@ export class LocalTransport extends BaseTransport {
   }
 
   buildCommandParts(drushCommand: string, args: string[], _options?: BuildOptions): CommandParts {
+    // No shell here (execFile), but `ddev drush` and friends hand the words to
+    // one inside the container, and a name like `--root=...` is an option.
+    assertDrushCommandName(drushCommand);
     const [file, ...prefix] = this.commandParts;
     return {
       file,

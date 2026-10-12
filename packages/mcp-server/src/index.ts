@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { parseCliArgs, configPathFromArgs, loadConfigFile, loadConfigFromEnv, mergeConfig } from './config.js';
 import { normalizeError } from './errors.js';
 import { SiteManager } from './site-manager.js';
+import { DRUSH_COMMAND_NAME } from './transport/base.js';
 import type { DrushArgs } from './types.js';
 import { resolveFileUploadConfig } from './types.js';
 
@@ -343,9 +344,9 @@ Config file:
   // Power tools
   server.tool(
     'drupal_drush',
-    'Run any Drush command',
+    'Run a Drush command by name, with its options and arguments passed separately',
     {
-      command:   z.string().describe('Drush command to run (e.g. cache:rebuild)'),
+      command:   z.string().regex(DRUSH_COMMAND_NAME, 'command must be a bare Drush command name (e.g. cache:rebuild); pass options and arguments in arguments').describe('Drush command name only (e.g. cache:rebuild, pm:list). Letters, digits, colon, dot, dash and underscore; no spaces, options or shell syntax.'),
       arguments: z.array(z.string()).optional().describe('Additional arguments and flags'),
       format:    z.string().optional().describe('Output format (e.g. json, table, yaml)'),
       site:      siteParam,

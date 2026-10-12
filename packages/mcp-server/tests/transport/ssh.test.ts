@@ -14,7 +14,7 @@ describe('SshTransport', () => {
     expect(parts.file).toBe('ssh');
     expect(parts.args[0]).toBe('deploy@example.com');
     expect(parts.args[1]).toContain("cd '/var/www/html'");
-    expect(parts.args[1]).toContain('vendor/bin/drush cache:rebuild');
+    expect(parts.args[1]).toContain("'vendor/bin/drush' 'cache:rebuild'");
   });
 
   it('uses default drush path when not specified', () => {
@@ -25,7 +25,7 @@ describe('SshTransport', () => {
       timeout: 30,
     });
     const parts = transport.buildCommandParts('core:status', []);
-    expect(parts.args[1]).toContain('vendor/bin/drush core:status');
+    expect(parts.args[1]).toContain("'vendor/bin/drush' 'core:status'");
   });
 
   it('inserts -T when building for stdin streaming', () => {

@@ -14,7 +14,7 @@ describe('DockerTransport', () => {
     expect(parts.file).toBe('ssh');
     expect(parts.args[0]).toBe('root@176.9.125.8');
     expect(parts.args[1]).toContain("docker exec 'atrium-web'");
-    expect(parts.args[1]).toContain('/app/vendor/bin/drush cache:rebuild');
+    expect(parts.args[1]).toContain("'/app/vendor/bin/drush' 'cache:rebuild'");
   });
 
   it('passes arguments through docker exec', () => {
@@ -26,7 +26,7 @@ describe('DockerTransport', () => {
       timeout: 30,
     });
     const parts = transport.buildCommandParts('core:status', ['--format=json']);
-    expect(parts.args[1]).toContain('/app/vendor/bin/drush core:status');
+    expect(parts.args[1]).toContain("'/app/vendor/bin/drush' 'core:status'");
     expect(parts.args[1]).toContain('--format=json');
   });
 

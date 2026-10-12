@@ -1,6 +1,6 @@
 import { execFile, spawn } from 'child_process';
 import { shellQuote } from './shell.js';
-import { BaseTransport, type TransportConfig, type CommandParts, type BuildOptions } from './base.js';
+import { BaseTransport, assertDrushCommandName, type TransportConfig, type CommandParts, type BuildOptions } from './base.js';
 import type { TransportResult } from '../types.js';
 
 export interface DockerTransportConfig extends TransportConfig {
@@ -16,7 +16,7 @@ export class DockerTransport extends BaseTransport {
   private user:             string;
   private container?:       string;
   private containerFilter?: string;
-  private drush:            string;
+  private drush:            string[];
 
   constructor(config: DockerTransportConfig) {
     super(config);
@@ -24,7 +24,8 @@ export class DockerTransport extends BaseTransport {
     this.user            = config.user;
     this.container       = config.container;
     this.containerFilter = config.containerFilter;
-    this.drush           = config.drush ?? 'vendor/bin/drush';
+    // Words, not a shell snippet, as in SshTransport.
+    this.drush           = (config.drush ?? 'vendor/bin/drush').trim().split(/\s+/);
   }
 
   private resolveContainer(): Promise<string> {
@@ -51,8 +52,10 @@ export class DockerTransport extends BaseTransport {
   }
 
   private buildPartsFor(container: string, drushCommand: string, args: string[], options?: BuildOptions): CommandParts {
-    const escapedArgs = args.map(a => shellQuote(a));
-    const drushParts  = [this.drush, drushCommand, ...escapedArgs].join(' ');
+    assertDrushCommandName(drushCommand);
+    // Everything after `docker exec` runs in the host's shell, not the
+    // container's, so an unquoted word here escapes the container.
+    const drushParts  = [...this.drush, drushCommand, ...args].map(shellQuote).join(' ');
     // -i keeps stdin attached inside the container.
     const dockerExec  = options?.stdin
       ? `docker exec -i ${shellQuote(container)} ${drushParts}`
@@ -70,6 +73,8 @@ export class DockerTransport extends BaseTransport {
 
   override async execute(drushCommand: string, args: string[]): Promise<TransportResult> {
     if (!this.container && this.containerFilter) {
+      // Refuse before the container lookup costs an ssh round trip.
+      assertDrushCommandName(drushCommand);
       const resolved = await this.resolveContainer();
       const fullArgs = this.config.uri ? [...args, `--uri=${this.config.uri}`] : args;
       const parts    = this.buildPartsFor(resolved, drushCommand, fullArgs);
@@ -90,6 +95,7 @@ export class DockerTransport extends BaseTransport {
 
   override async executeWithStdin(drushCommand: string, args: string[], stdin: Buffer): Promise<TransportResult> {
     if (!this.container && this.containerFilter) {
+      assertDrushCommandName(drushCommand);
       const resolved = await this.resolveContainer();
       const fullArgs = this.config.uri ? [...args, `--uri=${this.config.uri}`] : args;
       const parts    = this.buildPartsFor(resolved, drushCommand, fullArgs, { stdin: true });
