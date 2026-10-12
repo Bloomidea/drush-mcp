@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace DrushMcp\Drush\Commands;
 
+use Drupal\Core\Access\AccessResultInterface;
+use Drupal\Core\Access\AccessResultReasonInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
@@ -93,8 +95,8 @@ final class McpBridgeDrushCommands extends DrushCommands {
   #[CLI\Option(name: 'type', description: 'Entity type (e.g. node, taxonomy_term)')]
   #[CLI\Option(name: 'bundle', description: 'Bundle (e.g. article, page)')]
   #[CLI\Option(name: 'fields', description: 'JSON-encoded field values')]
-  #[CLI\Option(name: 'user', description: 'Drupal user ID to run as (default: 1)')]
-  public function entityCreate(array $options = ['type' => self::REQ, 'bundle' => self::REQ, 'fields' => self::REQ, 'user' => '1']): void {
+  #[CLI\Option(name: 'user', description: 'Drupal user ID to run as (default: 0, anonymous)')]
+  public function entityCreate(array $options = ['type' => self::REQ, 'bundle' => self::REQ, 'fields' => self::REQ, 'user' => '0']): void {
     $entityTypeId = (string) $options['type'];
     $bundle       = (string) $options['bundle'];
     $fieldsJson   = (string) $options['fields'];
@@ -113,12 +115,29 @@ final class McpBridgeDrushCommands extends DrushCommands {
         $bundleKey    = $entityType->getKey('bundle');
         $storage      = $this->entityTypeManager->getStorage($entityTypeId);
 
+        $access = $this->entityTypeManager->getAccessControlHandler($entityTypeId)
+          ->createAccess($bundleKey ? $bundle : NULL, NULL, [], TRUE);
+        if (!$access->isAllowed()) {
+          $this->outputAccessDenied(sprintf('create %s:%s', $entityTypeId, $bundle), $access);
+          return;
+        }
+
         $createValues = $fields;
         if ($bundleKey) {
           $createValues[$bundleKey] = $bundle;
         }
 
         $entity = $storage->create($createValues);
+
+        // Compare against a blank entity of the same bundle, so a field set to
+        // the value it would get anyway (`uid` of the acting account, the
+        // default `status`) needs no edit access, as in core's REST resource.
+        $blank  = $storage->create($bundleKey ? [$bundleKey => $bundle] : []);
+        $denied = $this->fieldsDeniedForEdit($entity, $blank, array_keys($fields));
+        if ($denied !== []) {
+          $this->outputError('access_denied', sprintf('The acting account may not set these fields: %s.', implode(', ', $denied)), ['fields' => $denied]);
+          return;
+        }
 
         $violations = $entity->validate();
         if ($violations->count() > 0) {
@@ -156,8 +175,8 @@ final class McpBridgeDrushCommands extends DrushCommands {
   #[CLI\Command(name: 'mcp:entity-read', aliases: ['mer'])]
   #[CLI\Option(name: 'type', description: 'Entity type (e.g. node, taxonomy_term)')]
   #[CLI\Option(name: 'id', description: 'Entity ID')]
-  #[CLI\Option(name: 'user', description: 'Drupal user ID to run as (default: 1)')]
-  public function entityRead(array $options = ['type' => self::REQ, 'id' => self::REQ, 'user' => '1']): void {
+  #[CLI\Option(name: 'user', description: 'Drupal user ID to run as (default: 0, anonymous)')]
+  public function entityRead(array $options = ['type' => self::REQ, 'id' => self::REQ, 'user' => '0']): void {
     $entityTypeId = (string) $options['type'];
     $entityId     = (string) $options['id'];
 
@@ -167,6 +186,12 @@ final class McpBridgeDrushCommands extends DrushCommands {
 
         if ($entity === NULL) {
           $this->outputError('drush_error', sprintf('Entity "%s" with ID "%s" not found.', $entityTypeId, $entityId));
+          return;
+        }
+
+        $access = $entity->access('view', NULL, TRUE);
+        if (!$access->isAllowed()) {
+          $this->outputAccessDenied(sprintf('view %s %s', $entityTypeId, $entityId), $access);
           return;
         }
 
@@ -189,8 +214,8 @@ final class McpBridgeDrushCommands extends DrushCommands {
   #[CLI\Option(name: 'type', description: 'Entity type (e.g. node, taxonomy_term)')]
   #[CLI\Option(name: 'id', description: 'Entity ID')]
   #[CLI\Option(name: 'fields', description: 'JSON-encoded field values to update')]
-  #[CLI\Option(name: 'user', description: 'Drupal user ID to run as (default: 1)')]
-  public function entityUpdate(array $options = ['type' => self::REQ, 'id' => self::REQ, 'fields' => self::REQ, 'user' => '1']): void {
+  #[CLI\Option(name: 'user', description: 'Drupal user ID to run as (default: 0, anonymous)')]
+  public function entityUpdate(array $options = ['type' => self::REQ, 'id' => self::REQ, 'fields' => self::REQ, 'user' => '0']): void {
     $entityTypeId = (string) $options['type'];
     $entityId     = (string) $options['id'];
     $fieldsJson   = (string) $options['fields'];
@@ -212,10 +237,25 @@ final class McpBridgeDrushCommands extends DrushCommands {
           return;
         }
 
+        $access = $entity->access('update', NULL, TRUE);
+        if (!$access->isAllowed()) {
+          $this->outputAccessDenied(sprintf('update %s %s', $entityTypeId, $entityId), $access);
+          return;
+        }
+
+        $original      = clone $entity;
         $changedFields = [];
         foreach ($fields as $fieldName => $fieldValue) {
           $entity->set($fieldName, $fieldValue);
           $changedFields[] = $fieldName;
+        }
+
+        // Only fields whose value actually changes need edit access, so
+        // sending back a value read earlier is never refused.
+        $denied = $this->fieldsDeniedForEdit($entity, $original, $changedFields);
+        if ($denied !== []) {
+          $this->outputError('access_denied', sprintf('The acting account may not change these fields: %s.', implode(', ', $denied)), ['fields' => $denied]);
+          return;
         }
 
         $violations = $entity->validate();
@@ -258,7 +298,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
   #[CLI\Option(name: 'limit', description: 'Maximum results')]
   #[CLI\Option(name: 'offset', description: 'Result offset')]
   #[CLI\Option(name: 'sort', description: 'Sort field:direction (e.g. created:DESC)')]
-  #[CLI\Option(name: 'user', description: 'Drupal user ID to run as (default: 1)')]
+  #[CLI\Option(name: 'user', description: 'Drupal user ID to run as (default: 0, anonymous)')]
   public function entityList(array $options = [
     'type'    => self::REQ,
     'bundle'  => NULL,
@@ -266,7 +306,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
     'limit'   => '50',
     'offset'  => '0',
     'sort'    => NULL,
-    'user'    => '1',
+    'user'    => '0',
   ]): void {
     $type        = (string) $options['type'];
     $limit       = (int) $options['limit'];
@@ -317,9 +357,14 @@ final class McpBridgeDrushCommands extends DrushCommands {
         $ids      = $query->execute();
         $entities = $storage->loadMultiple($ids);
 
+        // accessCheck() applies node grants but not the published status (a
+        // site without a grants module answers every node), so each entity
+        // is checked again. A page can therefore come back shorter than limit.
         $items = [];
         foreach ($entities as $entity) {
-          $items[] = $this->entitySerializer->serializeSummary($entity);
+          if ($entity->access('view')) {
+            $items[] = $this->entitySerializer->serializeSummary($entity);
+          }
         }
 
         $this->io()->write(json_encode([
@@ -346,8 +391,8 @@ final class McpBridgeDrushCommands extends DrushCommands {
   #[CLI\Command(name: 'mcp:introspect', aliases: ['mi'])]
   #[CLI\Option(name: 'type', description: 'Entity type to inspect')]
   #[CLI\Option(name: 'bundle', description: 'Bundle to inspect')]
-  #[CLI\Option(name: 'user', description: 'Drupal user ID to run as (default: 1)')]
-  public function introspect(array $options = ['type' => NULL, 'bundle' => NULL, 'user' => '1']): void {
+  #[CLI\Option(name: 'user', description: 'Drupal user ID to run as (default: 0, anonymous)')]
+  public function introspect(array $options = ['type' => NULL, 'bundle' => NULL, 'user' => '0']): void {
     $type   = !empty($options['type']) ? (string) $options['type'] : NULL;
     $bundle = !empty($options['bundle']) ? (string) $options['bundle'] : NULL;
 
@@ -409,7 +454,9 @@ final class McpBridgeDrushCommands extends DrushCommands {
                 ->loadByProperties(['vid' => array_keys($settings['handler_settings']['target_bundles'])]);
               $allowed = [];
               foreach ($terms as $term) {
-                $allowed[] = ['id' => $term->id(), 'label' => $term->label()];
+                if ($term->access('view label')) {
+                  $allowed[] = ['id' => $term->id(), 'label' => $term->label()];
+                }
               }
               $fieldInfo['allowed_values'] = $allowed;
             }
@@ -447,6 +494,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
   #[CLI\Option(name: 'scheme', description: 'Stream wrapper scheme (public, private, temporary). Defaults to system.file default_scheme.')]
   #[CLI\Option(name: 'destination', description: 'Directory within the scheme')]
   #[CLI\Option(name: 'uid', description: 'Owning user ID')]
+  #[CLI\Option(name: 'user', description: 'Drupal user ID to run as (default: the owner in --uid, else 0, anonymous)')]
   #[CLI\Option(name: 'size', description: 'Declared payload size in bytes (verified against stdin)')]
   #[CLI\Option(name: 'sha256', description: 'Optional SHA-256 of the payload for integrity check')]
   #[CLI\Option(name: 'field-extensions', description: 'Space-separated extension allowlist from the target field (intersected when attaching)')]
@@ -456,13 +504,16 @@ final class McpBridgeDrushCommands extends DrushCommands {
     'scheme'           => NULL,
     'destination'      => self::REQ,
     'uid'              => '0',
+    'user'             => NULL,
     'size'             => self::REQ,
     'sha256'           => NULL,
     'field-extensions' => NULL,
     'field-max-size'   => NULL,
   ]): void {
-    $actingUid = (string) ($options['uid'] ?? '0');
-    $this->runAsUser($actingUid !== '0' ? $actingUid : '1', function () use ($options) {
+    // A standalone managed file has no core access check to apply: Drupal has
+    // no permission to create one outside a field. drupal_file_attach is the
+    // checked route, and only it is in the MCP server's `content` profile.
+    $this->runAsUser($this->fileActingUser($options), function () use ($options) {
       try {
         $file = $this->processUpload($options);
         $this->io()->write(json_encode($this->fileToOutput($file), JSON_THROW_ON_ERROR));
@@ -487,6 +538,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
   #[CLI\Option(name: 'scheme', description: 'Stream wrapper scheme (public, private, temporary). Defaults to the uri_scheme of the target field.')]
   #[CLI\Option(name: 'destination', description: 'Directory within the scheme')]
   #[CLI\Option(name: 'uid', description: 'Owning user ID')]
+  #[CLI\Option(name: 'user', description: 'Drupal user ID to run as (default: the owner in --uid, else 0, anonymous)')]
   #[CLI\Option(name: 'size', description: 'Declared payload size in bytes')]
   #[CLI\Option(name: 'sha256', description: 'Optional SHA-256 of the payload')]
   #[CLI\Option(name: 'entity-type', description: 'Target entity type (e.g. node, comment)')]
@@ -500,6 +552,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
     'scheme'      => NULL,
     'destination' => self::REQ,
     'uid'         => '0',
+    'user'        => NULL,
     'size'        => self::REQ,
     'sha256'      => NULL,
     'entity-type' => self::REQ,
@@ -521,8 +574,7 @@ final class McpBridgeDrushCommands extends DrushCommands {
       return;
     }
 
-    $actingUid = (string) ($options['uid'] ?? '0');
-    $this->runAsUser($actingUid !== '0' ? $actingUid : '1', function () use ($options, $entityTypeId, $entityId, $fieldName, $mode, $alt, $title) {
+    $this->runAsUser($this->fileActingUser($options), function () use ($options, $entityTypeId, $entityId, $fieldName, $mode, $alt, $title) {
     try {
       // Load and validate entity + field BEFORE consuming stdin.
       $storage = $this->entityTypeManager->getStorage($entityTypeId);
@@ -540,6 +592,15 @@ final class McpBridgeDrushCommands extends DrushCommands {
       $fieldType       = $fieldDefinition->getType();
       if (!in_array($fieldType, ['file', 'image'], TRUE)) {
         throw new FilePreflightException(sprintf('Field %s is type "%s", not file/image', $fieldName, $fieldType), 'FIELD_INVALID');
+      }
+
+      // The same checks an upload widget on the edit form would pass through.
+      $access = $entity->access('update', NULL, TRUE);
+      if (!$access->isAllowed()) {
+        throw new FilePreflightException($this->accessDeniedMessage(sprintf('update %s %s', $entityTypeId, $entityId), $access), 'ACCESS_DENIED');
+      }
+      if (!$entity->get($fieldName)->access('edit')) {
+        throw new FilePreflightException(sprintf('The acting account may not change field %s on %s %s.', $fieldName, $entityTypeId, $entityId), 'ACCESS_DENIED');
       }
 
       // Cardinality check (for append only — replace clears first).
@@ -783,6 +844,69 @@ final class McpBridgeDrushCommands extends DrushCommands {
     $post   = \Drupal\Component\Utility\Bytes::toNumber((string) ini_get('post_max_size'));
     $values = array_filter([$upload, $post], fn($v) => $v > 0);
     return $values ? (int) min($values) : 0;
+  }
+
+  /**
+   * The account a file command runs as.
+   *
+   * --user when given, else the owner in --uid, else anonymous. Servers older
+   * than 0.6.0 send only --uid, and an attach on their behalf keeps acting as
+   * the file's owner instead of falling to anonymous.
+   *
+   * @param array<string, mixed> $options
+   *   Command options.
+   */
+  private function fileActingUser(array $options): string {
+    if (isset($options['user']) && (string) $options['user'] !== '') {
+      return (string) $options['user'];
+    }
+    return (string) ($options['uid'] ?? '0');
+  }
+
+  /**
+   * Names the fields in $names that the current account may not edit.
+   *
+   * A field whose value equals the one in $reference is skipped: on create the
+   * reference is a blank entity, so a value the entity would get anyway needs
+   * no access; on update it is the entity as loaded, so an unchanged value
+   * needs none either. Core's REST resource draws the same line.
+   *
+   * @param string[] $names
+   *   Field names the caller set.
+   *
+   * @return string[]
+   *   The fields the account may not set to their new values.
+   */
+  private function fieldsDeniedForEdit(ContentEntityInterface $entity, ContentEntityInterface $reference, array $names): array {
+    $denied = [];
+    foreach ($names as $name) {
+      if (!$entity->hasField($name)) {
+        continue;
+      }
+      $items = $entity->get($name);
+      if ($reference->hasField($name) && $items->equals($reference->get($name))) {
+        continue;
+      }
+      if (!$items->access('edit')) {
+        $denied[] = $name;
+      }
+    }
+    return $denied;
+  }
+
+  /**
+   * Builds the message for a refused entity operation, with core's reason.
+   */
+  private function accessDeniedMessage(string $operation, AccessResultInterface $result): string {
+    $reason = $result instanceof AccessResultReasonInterface ? (string) $result->getReason() : '';
+    return sprintf('The acting account may not %s.', $operation) . ($reason !== '' ? ' ' . $reason : '');
+  }
+
+  /**
+   * Outputs an access_denied error for a refused entity operation.
+   */
+  private function outputAccessDenied(string $operation, AccessResultInterface $result): void {
+    $this->outputError('access_denied', $this->accessDeniedMessage($operation, $result));
   }
 
   /**

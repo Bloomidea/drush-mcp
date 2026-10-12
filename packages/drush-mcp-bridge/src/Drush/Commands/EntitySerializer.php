@@ -26,8 +26,10 @@ final class EntitySerializer {
   /**
    * Serializes a content entity to a full JSON-friendly array.
    *
-   * Includes all fields with their types and values. For entity_reference
-   * fields, the referenced entity's label is resolved alongside the target_id.
+   * Includes every field the current account may view, with its type and
+   * values; a user's `pass` and another user's `mail` stay out, as on any
+   * Drupal page. For entity_reference fields, the referenced entity's label is
+   * resolved alongside the target_id when the account may see that label.
    *
    * @param \Drupal\Core\Entity\ContentEntityInterface $entity
    *   The entity to serialize.
@@ -39,6 +41,9 @@ final class EntitySerializer {
     $fields = [];
 
     foreach ($entity->getFields() as $fieldName => $fieldItemList) {
+      if (!$fieldItemList->access('view')) {
+        continue;
+      }
       $fieldDefinition = $fieldItemList->getFieldDefinition();
       $fieldType       = $fieldDefinition->getType();
       $values          = [];
@@ -51,7 +56,7 @@ final class EntitySerializer {
           try {
             $targetType       = $fieldDefinition->getSetting('target_type');
             $referencedEntity = $this->entityTypeManager->getStorage($targetType)->load($value['target_id']);
-            if ($referencedEntity) {
+            if ($referencedEntity && $referencedEntity->access('view label')) {
               $value['label'] = $referencedEntity->label();
             }
           }
@@ -91,15 +96,16 @@ final class EntitySerializer {
    *   A lightweight JSON-friendly array representation of the entity.
    */
   public function serializeSummary(ContentEntityInterface $entity): array {
+    $visible = fn(string $name): bool => $entity->hasField($name) && $entity->get($name)->access('view');
     return [
       'id'      => $entity->id(),
       'uuid'    => $entity->uuid(),
       'type'    => $entity->getEntityTypeId(),
       'bundle'  => $entity->bundle(),
-      'label'   => $entity->label(),
-      'status'  => $entity->hasField('status') ? (bool) $entity->get('status')->value : null,
-      'created' => $entity->hasField('created') ? (int) $entity->get('created')->value : null,
-      'changed' => $entity->hasField('changed') ? (int) $entity->get('changed')->value : null,
+      'label'   => $entity->access('view label') ? $entity->label() : null,
+      'status'  => $visible('status') ? (bool) $entity->get('status')->value : null,
+      'created' => $visible('created') ? (int) $entity->get('created')->value : null,
+      'changed' => $visible('changed') ? (int) $entity->get('changed')->value : null,
     ];
   }
 
